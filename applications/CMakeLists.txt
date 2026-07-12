@@ -3,8 +3,11 @@
 #   add_subdirectory(my_app)
 
 add_subdirectory(common)
+add_subdirectory(ebook_reader)
+add_subdirectory(image_viewer)
 add_subdirectory(flappy_bird)
 add_subdirectory(epniccc)
 add_subdirectory(snake)
 add_subdirectory(game_2048)
 add_subdirectory(tetris)
+add_subdirectory(system_maintenance)
