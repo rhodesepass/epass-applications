@@ -206,14 +206,16 @@ static void build_page_keymap(tutorial_ui_t *ui)
         }
     }
 
+    /* 18px 下行要短; 右对齐让出左下角电源标注 */
     lv_obj_t *note = make_label(ui, ui->page,
-        "KEY_1 上翻/上一项    KEY_2 下翻/下一项\n"
-        "KEY_3 确定/进入    KEY_4 取消/退出\n"
-        "刷机: 系统断电时拔出 SD 卡, 按住刷机键和\n"
-        "电源键开机, 即可进入刷机模式。",
+        "KEY_1 上一项  KEY_2 下一项\n"
+        "KEY_3 确定  KEY_4 退出\n"
+        "刷机: 断电拔出 SD 卡, 按住\n"
+        "刷机键和电源键开机进入。",
         ui->font_small, COL_MUTED);
     lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(note, LV_ALIGN_BOTTOM_MID, 0, -scaled(ui, 6));
+    lv_obj_set_width(note, w - scaled(ui, 100));
+    lv_obj_align(note, LV_ALIGN_BOTTOM_RIGHT, -scaled(ui, 6), -scaled(ui, 6));
 }
 
 /* ---------------- 第 2 页: 设备自检 ---------------- */
@@ -265,8 +267,8 @@ static int selftest_row(tutorial_ui_t *ui, int x, int y, const char *caption,
     lv_obj_t *l = make_label(ui, ui->page, caption, ui->font_small, COL_MUTED);
     lv_obj_set_pos(l, x, y);
     l = make_label(ui, ui->page, value, ui->font_body, color);
-    lv_obj_set_pos(l, x + scaled(ui, 110), y - scaled(ui, 3));
-    return y + scaled(ui, 30);
+    lv_obj_set_pos(l, x + scaled(ui, 100), y - scaled(ui, 4));
+    return y + scaled(ui, 42);
 }
 
 static void build_page_selftest(tutorial_ui_t *ui)
@@ -278,7 +280,7 @@ static void build_page_selftest(tutorial_ui_t *ui)
 
     lv_obj_t *title = make_label(ui, ui->page, "欢迎使用电子通行证！", ui->font_title, COL_ACCENT);
     lv_obj_set_pos(title, x, y);
-    y += scaled(ui, 52);
+    y += scaled(ui, 66);
 
     /* 设备版本 (device-tree model, 可能较长, 独立成块) */
     char model[96];
@@ -286,12 +288,12 @@ static void build_page_selftest(tutorial_ui_t *ui)
     if(!model_ok) { strcpy(model, "读取失败   WARNING"); ui->warn_static = true; }
     lv_obj_t *l = make_label(ui, ui->page, "设备版本", ui->font_small, COL_MUTED);
     lv_obj_set_pos(l, x, y);
-    y += scaled(ui, 20);
+    y += scaled(ui, 26);
     l = make_label(ui, ui->page, model, ui->font_body, model_ok ? COL_TEXT : COL_WARN);
     lv_obj_set_width(l, w - 2 * x);
     lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
     lv_obj_set_pos(l, x, y);
-    y += scaled(ui, 36);
+    y += scaled(ui, 46);
 
     /* 机种类型: 只认 360p / 720p 两档 */
     char text[64];
@@ -328,13 +330,13 @@ static void build_page_selftest(tutorial_ui_t *ui)
     l = make_label(ui, ui->page, "视频解码器", ui->font_small, COL_MUTED);
     lv_obj_set_pos(l, x, y);
     ui->ve_value = make_label(ui, ui->page, "检测中…", ui->font_body, COL_TEXT);
-    lv_obj_set_pos(ui->ve_value, x + scaled(ui, 110), y - scaled(ui, 3));
-    y += scaled(ui, 28);
+    lv_obj_set_pos(ui->ve_value, x + scaled(ui, 100), y - scaled(ui, 4));
+    y += scaled(ui, 38);
     ui->ve_detail = make_label(ui, ui->page, "", ui->font_small, COL_MUTED);
     lv_obj_set_width(ui->ve_detail, w - 2 * x);
     lv_label_set_long_mode(ui->ve_detail, LV_LABEL_LONG_WRAP);
     lv_obj_set_pos(ui->ve_detail, x, y);
-    y += scaled(ui, 40);
+    y += scaled(ui, 56);
 
     /* 汇总 */
     ui->summary = make_label(ui, ui->page, "", ui->font_body, COL_MUTED);
@@ -351,8 +353,8 @@ static void build_page_selftest(tutorial_ui_t *ui)
     update_summary(ui);
 
     lv_obj_t *foot = make_label(ui, ui->page,
-        "本项目是开源的自由硬件与软件,\n"
-        "源代码可以从 github.com/rhodesepass 获取。",
+        "本项目是开源的自由硬件与软件\n"
+        "github.com/rhodesepass",
         ui->font_small, COL_MUTED);
     lv_obj_set_style_text_align(foot, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, 0, -scaled(ui, 6));
@@ -377,14 +379,14 @@ static void build_shot_page(tutorial_ui_t *ui, const char *title_text,
     lv_image_set_src(img, src);
     lv_obj_set_style_border_width(img, scaled(ui, 2), 0);
     lv_obj_set_style_border_color(img, lv_color_hex(0x3a4350), 0);
-    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, scaled(ui, 52));
+    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, scaled(ui, 58));
 
     lv_obj_t *text = make_label(ui, ui->page, bullets, ui->font_body, COL_TEXT);
     lv_label_set_recolor(text, true); /* 支持 #RRGGBB xx# 高亮 (设备无粗体字重) */
     lv_obj_set_width(text, w - 2 * x);
     lv_label_set_long_mode(text, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_line_space(text, scaled(ui, 4), 0);
-    lv_obj_set_pos(text, x, scaled(ui, 52) + img_h + scaled(ui, 14));
+    lv_obj_set_style_text_line_space(text, scaled(ui, 2), 0);
+    lv_obj_set_pos(text, x, scaled(ui, 58) + img_h + scaled(ui, 12));
 }
 
 /* ---------------- 最后一页: 社群二维码 ---------------- */
@@ -392,13 +394,13 @@ static void build_shot_page(tutorial_ui_t *ui, const char *title_text,
 static void build_page_community(tutorial_ui_t *ui)
 {
     lv_obj_t *title = make_label(ui, ui->page,
-        "在线管理设备、下载APP、功能建议、\n加入社群、更多玩法…",
+        "在线管理设备、下载APP、\n功能建议、加入社群、更多玩法…",
         ui->font_body, COL_TEXT);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, scaled(ui, 24));
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, scaled(ui, 20));
 
     lv_obj_t *scan = make_label(ui, ui->page, "请扫描下方二维码", ui->font_title, COL_ACCENT);
-    lv_obj_align(scan, LV_ALIGN_TOP_MID, 0, scaled(ui, 78));
+    lv_obj_align(scan, LV_ALIGN_TOP_MID, 0, scaled(ui, 96));
 
     /* 白底留边, 保证二维码静区可扫 */
     int qr_size = scaled(ui, 190);
@@ -409,7 +411,7 @@ static void build_page_community(tutorial_ui_t *ui)
     lv_obj_set_style_border_width(panel, 0, 0);
     lv_obj_set_style_radius(panel, scaled(ui, 6), 0);
     lv_obj_set_style_pad_all(panel, pad, 0);
-    lv_obj_align(panel, LV_ALIGN_CENTER, 0, scaled(ui, 10));
+    lv_obj_align(panel, LV_ALIGN_CENTER, 0, scaled(ui, 26));
 
     lv_obj_t *qr = lv_qrcode_create(panel);
     lv_qrcode_set_size(qr, qr_size);
@@ -419,7 +421,7 @@ static void build_page_community(tutorial_ui_t *ui)
     lv_obj_center(qr);
 
     lv_obj_t *url = make_label(ui, ui->page, COMMUNITY_URL, ui->font_body, COL_TEXT);
-    lv_obj_align(url, LV_ALIGN_CENTER, 0, scaled(ui, 135));
+    lv_obj_align(url, LV_ALIGN_CENTER, 0, scaled(ui, 158));
 
     lv_obj_t *done = make_label(ui, ui->page,
         "本教程后续可通过“应用”打开。\n按 KEY_3 完成教程",
@@ -458,45 +460,42 @@ static void build_page(tutorial_ui_t *ui)
         build_shot_page(ui, "干员列表 / 扩列图", "oplist",
             "播放画面按 KEY_1 / KEY_2 直接进入。\n"
             "· 选中干员即切换当前播放的立绘\n"
-            "· 扩列图: 播放画面按 KEY_3 进入,\n"
-            "  KEY_1 / KEY_2 翻页\n"
-            "· 干员素材与扩列图推荐用 Web 管理器\n"
-            "  或手机 APP 管理");
+            "· 扩列图: 在播放画面按 KEY_3 进入, KEY_1 / KEY_2 翻页\n"
+            "· 素材与扩列图推荐用 Web 管理器或手机 APP 管理");
         break;
     case PAGE_APPS:
         build_shot_page(ui, "应用 / 文件", "applist",
-            "第三方应用与文件管理, 从主菜单进入。\n"
+            "第三方应用与文件管理。\n"
             "· 应用装在 NAND 的 /app 或 SD 卡的 /sd/app\n"
-            "· 选中即启动, 应用内一般按 KEY_4 退出\n"
-            "· 文件: 浏览设备文件, 可用关联应用打开");
+            "· 预装文本、图片查看器、游戏等\n"
+            "· 选中即启动\n"
+            "· 文件: 浏览文件, 可调起关联应用");
         break;
     case PAGE_SETTINGS:
         build_shot_page(ui, "设置", "settings",
             "调整播放与系统行为。\n"
             "· 切换模式: 顺序 / 随机 / 手动\n"
             "· 自动切换间隔、低电量自动关机、主题等\n"
-            "· 下拉框: KEY_3 进入编辑, KEY_1 / KEY_2 选择,\n"
-            "  再按 KEY_3 确认");
+            "· 下拉框: KEY_3 进入编辑, KEY_1/2 选择, 再按 KEY_3 确认");
         break;
     case PAGE_USB:
         build_shot_page(ui, "USB 模式", "usbselect",
-            "插入 USB 线时会弹出用途选择。\n"
-            "· 管理APP: 连接 Web 管理器或安卓 APP\n"
-            "· 文件MTP: 作为 MTP 设备传输文件\n"
-            "· FIDO密钥: 模拟 FIDO 密钥, 做着玩的,\n"
-            "  请谨慎使用\n"
-            "· 要选其他模式: 到设置按“重置USB模式”");
+            "插入 USB 线时弹出用途选择。\n"
+            "· 管理APP:连接网页/安卓APP\n"
+            "· 文件MTP: 传输文件\n"
+            "· FIDO密钥: 模拟#78c8ff 不安全 #的FIDO令牌\n"
+            "· 换模式: 设置里按 重置USB模式");
         break;
     case PAGE_SYSINFO:
         build_shot_page(ui, "设备信息", "sysinfo",
             "查看存储占用与版本, 从主菜单“设备”进入。\n"
             "· NAND / SD 卡容量、系统与程序版本\n"
             "· 可在此格式化 SD 卡 (有二次确认)\n"
-            "· 二次确认框: KEY_3 确定, KEY_4 取消");
+            "· 确认框: KEY_3 确定, KEY_4 取消");
         break;
     case PAGE_MAINTENANCE:
         build_shot_page(ui, "系统维护", "applist",
-            "更详细的设置可通过 应用 里的 系统维护 打开:\n"
+            "更详细的设置可在 应用-系统维护 里打开:\n"
             "· 格式化存储卡\n"
             "· 设置拓展口功能\n"
             "· 维护 FIDO 令牌\n"
@@ -515,7 +514,7 @@ static void build_page(tutorial_ui_t *ui)
     else if(ui->page_index == PAGE_COUNT - 1)
         lv_label_set_text(ui->hint, "KEY_1 上一页 · KEY_3 完成");
     else
-        lv_label_set_text(ui->hint, "KEY_1 上一页 · KEY_3 下一页 · KEY_4 退出");
+        lv_label_set_text(ui->hint, "KEY_1/KEY_3 翻页 · KEY_4 退出");
 }
 
 /* ---------------- 对外接口 ---------------- */
@@ -540,9 +539,9 @@ tutorial_ui_t *tutorial_ui_create(tutorial_platform_t *platform)
         if(!getcwd(ui->base_dir, sizeof(ui->base_dir))) strcpy(ui->base_dir, ".");
     }
 
-    ui->font_title = load_font("SourceHanSerifSC-Heavy.otf", scaled(ui, 24));
-    ui->font_body = load_font("SourceHanSansSC-Regular.otf", scaled(ui, 15));
-    ui->font_small = load_font("SourceHanSansSC-Regular.otf", scaled(ui, 12));
+    ui->font_title = load_font("SourceHanSerifSC-Heavy.otf", scaled(ui, 30));
+    ui->font_body = load_font("SourceHanSansSC-Regular.otf", scaled(ui, 19));
+    ui->font_small = load_font("SourceHanSansSC-Regular.otf", scaled(ui, 15));
     ui->font_h1 = load_font("SourceHanSerifSC-Heavy.otf", scaled(ui, 30));
     ui->font_key = load_font("SourceHanSansSC-Regular.otf", scaled(ui, 19));
     if(!ui->font_title || !ui->font_body || !ui->font_small ||
@@ -557,7 +556,7 @@ tutorial_ui_t *tutorial_ui_create(tutorial_platform_t *platform)
 
     ui->page = lv_obj_create(ui->root);
     lv_obj_remove_style_all(ui->page);
-    lv_obj_set_size(ui->page, platform->width, platform->height - scaled(ui, 24));
+    lv_obj_set_size(ui->page, platform->width, platform->height - scaled(ui, 34));
     lv_obj_set_pos(ui->page, 0, 0);
 
     /* 底栏: 左键位提示, 右页码 */
