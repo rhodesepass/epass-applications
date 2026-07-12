@@ -21,7 +21,7 @@ target_link_libraries(snake PRIVATE epass_game)
 install(TARGETS snake
   DESTINATION snake
   COMPONENT applications)
-install(FILES appconfig.json
+install(FILES appconfig.json icon.png
   DESTINATION snake
   COMPONENT applications)
 

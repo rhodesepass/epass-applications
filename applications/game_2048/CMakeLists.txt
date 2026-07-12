@@ -42,7 +42,7 @@ if(NOT GAME_2048_LOGIC_ONLY)
     install(TARGETS ${APPLICATION_NAME}
         DESTINATION ${APPLICATION_NAME}
         COMPONENT applications)
-    install(FILES appconfig.json
+    install(FILES appconfig.json icon.png
         DESTINATION ${APPLICATION_NAME}
         COMPONENT applications)
 endif()

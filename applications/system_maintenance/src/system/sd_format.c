@@ -567,7 +567,6 @@ static int create_text_file(const char *path, const char *contents)
 static int populate_without_marker(void)
 {
     (void)unlink(SD_MOUNTPOINT "/.epass_sd");
-    (void)unlink("/tmp/sd_mounted");
     if (mkdir(SD_MOUNTPOINT "/assets", 0755) != 0 && errno != EEXIST) return -1;
     return create_text_file(
         SD_MOUNTPOINT "/README.txt",
@@ -622,9 +621,8 @@ static void after_child(sd_format_t *format, int child_kind)
     } else if (child_kind == CHILD_REFRESH) {
         if (create_text_file(SD_MOUNTPOINT "/.epass_sd",
                              "epass-sd-layout-v1\n") != 0 ||
-            create_text_file("/tmp/sd_mounted", "") != 0) {
+            create_text_file(SD_MOUNTPOINT "/.epass_sd", "") != 0) {
             (void)unlink(SD_MOUNTPOINT "/.epass_sd");
-            (void)unlink("/tmp/sd_mounted");
             set_error(format, "创建完成标记失败: %s", strerror(errno));
         } else {
             format->phase = SD_FORMAT_COMPLETE;

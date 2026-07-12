@@ -3,6 +3,7 @@
   "name": "2048",
   "uuid": "97d50f3d-24c8-4ac7-ae4c-3a684e6c45d1",
   "description": "适配四键操作的经典 2048 数字合并游戏。",
+  "icon": "icon.png",
   "executable": {
     "file": "game_2048"
   },

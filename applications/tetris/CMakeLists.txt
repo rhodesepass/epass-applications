@@ -38,6 +38,6 @@ add_test(NAME tetris_rotation_and_line_clear COMMAND tetris_logic_tests)
 install(TARGETS tetris
         DESTINATION tetris
         COMPONENT applications)
-install(FILES appconfig.json
+install(FILES appconfig.json icon.png
         DESTINATION tetris
         COMPONENT applications)
