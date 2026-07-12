@@ -3,3 +3,4 @@
 #   add_subdirectory(my_app)
 
 add_subdirectory(common)
+add_subdirectory(flappy_bird)

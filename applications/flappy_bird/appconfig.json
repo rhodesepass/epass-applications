@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "name": "Flappy Bird",
+  "uuid": "f778bc5f-feb6-4f4c-b829-331b0eb0a0e7",
+  "description": "使用 360x640 逻辑坐标、自动适配屏幕的 Flappy Bird。",
+  "icon": "icon.png",
+  "executable": {
+    "file": "flappy_bird"
+  },
+  "type": "fg",
+  "screens": [
+    "360x640",
+    "480x854",
+    "720x1280"
+  ]
+}
