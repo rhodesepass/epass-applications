@@ -153,7 +153,9 @@
 /** Stack size of drawing thread.
  * NOTE: If FreeType or ThorVG is enabled, it is recommended to set it to 32KB or more.
  */
-#define LV_DRAW_THREAD_STACK_SIZE    (32 * 1024)        /**< [bytes] — FreeType 时需 >=32KB */
+/* FreeType CFF 解释器吃栈, 32KB 在部分环境 (host 预览工具) 会溢出段错;
+ * pthread 栈按页懒提交, 放大不增加设备实际内存占用 (同 drm_app_neo sim 侧取值)。 */
+#define LV_DRAW_THREAD_STACK_SIZE    (256 * 1024)       /**< [bytes] */
 
 /** Thread priority of the drawing task.
  *  Higher values mean higher priority.
@@ -968,7 +970,7 @@
 #define LV_USE_RLE 0
 
 /** QR code library */
-#define LV_USE_QRCODE 0
+#define LV_USE_QRCODE 1
 
 /** Barcode code library */
 #define LV_USE_BARCODE 0
