@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "name": "贪吃蛇",
+  "uuid": "999d23e4-006f-4a6f-a9e4-f11a1c18c95c",
+  "description": "四键控制的经典贪吃蛇游戏。",
+  "executable": {
+    "file": "snake"
+  },
+  "type": "fg",
+  "screens": [
+    "360x640",
+    "480x854",
+    "720x1280"
+  ]
+}
