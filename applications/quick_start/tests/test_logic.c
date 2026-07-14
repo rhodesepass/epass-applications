@@ -1,3 +1,4 @@
+#include "storage.h"
 #include "sysinfo.h"
 #include "ve_check.h"
 
@@ -47,26 +48,35 @@ static void test_ve_verdict(void)
 {
     unsigned pct = 0;
 
-    /* 好片: 297MHz 基线, 切 144MHz 后跟随 (~48%) */
-    assert(ve_check_verdict(297000, 144000, &pct) == VE_CHECK_OK);
+    /* A 型: 绝对频率 <50MHz, 不论 enc/f2 */
+    assert(ve_check_verdict(200, 200, VE_ENC_OLD, &pct) == VE_CHECK_DEFECTIVE);
+    assert(ve_check_verdict(27000, 27500, VE_ENC_NONE, NULL) == VE_CHECK_DEFECTIVE);
+    assert(ve_check_verdict(49999, 0, VE_ENC_NEW, NULL) == VE_CHECK_DEFECTIVE);
+    /* f1=0 不除零, 仍按 A 型判 DEFECTIVE */
+    assert(ve_check_verdict(0, 0, VE_ENC_OLD, &pct) == VE_CHECK_DEFECTIVE);
+
+    /* B 型: PLL 看似正常但引擎窗口死 */
+    assert(ve_check_verdict(297000, 0, VE_ENC_NONE, NULL) == VE_CHECK_DEFECTIVE);
+
+    /* 新版 die: 窗口 sel=9 可写, 跳过整数跟随 → OK */
+    assert(ve_check_verdict(297000, 0, VE_ENC_NEW, &pct) == VE_CHECK_OK);
+
+    /* 老编码好片: 297→144 跟随 ~48% */
+    assert(ve_check_verdict(297000, 144000, VE_ENC_OLD, &pct) == VE_CHECK_OK);
     assert(pct == 48);
-    /* 好片边界: 恰好 100MHz */
-    assert(ve_check_verdict(100000, 48000, NULL) == VE_CHECK_OK);
+    assert(ve_check_verdict(100000, 48000, VE_ENC_OLD, NULL) == VE_CHECK_OK);
+    assert(ve_check_verdict(100000, 50000, VE_ENC_OLD, NULL) == VE_CHECK_OK); /* ~49% */
+    /* 跟随比窗外 → UNKNOWN (分母 f1+1 的整数除法) */
+    assert(ve_check_verdict(100000, 39000, VE_ENC_OLD, NULL) == VE_CHECK_UNKNOWN); /* 38% */
+    assert(ve_check_verdict(100000, 62000, VE_ENC_OLD, NULL) == VE_CHECK_UNKNOWN); /* 61% */
 
-    /* 瑕疵片: VCO 开环贴地, 频率不随 N 变化 (跟随比 ~100%) */
-    assert(ve_check_verdict(200, 200, &pct) == VE_CHECK_DEFECTIVE);
-    assert(ve_check_verdict(27000, 27500, NULL) == VE_CHECK_DEFECTIVE);
-    /* 跟随比边界 85 / 115 (整数除法, 分母 f1+1) */
-    assert(ve_check_verdict(9999, 8500, NULL) == VE_CHECK_DEFECTIVE);    /* =85% */
-    assert(ve_check_verdict(9999, 11500, NULL) == VE_CHECK_DEFECTIVE);   /* =115% */
-    assert(ve_check_verdict(10000, 8400, NULL) == VE_CHECK_UNKNOWN);     /* 83% */
-    assert(ve_check_verdict(10000, 11700, NULL) == VE_CHECK_UNKNOWN);    /* 116% */
+    /* B 型: 整数模式杀死 VCO (f2=0) */
+    assert(ve_check_verdict(297000, 0, VE_ENC_OLD, NULL) == VE_CHECK_DEFECTIVE);
 
-    /* 灰区: 50-100MHz 一律 UNKNOWN */
-    assert(ve_check_verdict(60000, 30000, NULL) == VE_CHECK_UNKNOWN);
-    assert(ve_check_verdict(99999, 48000, NULL) == VE_CHECK_UNKNOWN);
-    /* f1=0 不除零, 比值 0% 不在跟随窗口 → UNKNOWN */
-    assert(ve_check_verdict(0, 0, &pct) == VE_CHECK_UNKNOWN);
+    /* 非典型跟随比 → UNKNOWN (v1 只看绝对频率会误报 GOOD) */
+    assert(ve_check_verdict(297000, 297000, VE_ENC_OLD, &pct) == VE_CHECK_UNKNOWN);
+    assert(pct == 99);
+    assert(ve_check_verdict(60000, 30000, VE_ENC_OLD, NULL) == VE_CHECK_OK); /* 50% */
 }
 
 static void test_boot_source(void)
@@ -80,12 +90,44 @@ static void test_boot_source(void)
     assert(sysinfo_parse_boot_source(NULL) == SYSINFO_BOOT_UNKNOWN);
 }
 
+static void test_storage_parse(void)
+{
+    const char *mtd =
+        "dev:    size   erasesize  name\n"
+        "mtd0: 00100000 00020000 \"uboot\"\n"
+        "mtd3: 07600000 0001f000 \"rootfs\"\n";
+    unsigned long long size = 0;
+    assert(storage_parse_mtd(mtd, 3, &size));
+    assert(size == 0x07600000ULL);
+    assert(storage_parse_mtd(mtd, 0, NULL)); /* size_out 可为 NULL */
+    assert(!storage_parse_mtd(mtd, 1, NULL));
+    /* "mtd3" 不能被 "mtd30" 之类误命中: 前缀含冒号 */
+    assert(!storage_parse_mtd("mtd30: 00010000 00001000 \"x\"\n", 3, NULL));
+    assert(!storage_parse_mtd(NULL, 3, NULL));
+
+    unsigned long long bytes = 0;
+    assert(storage_parse_block_sectors("31116288\n", &bytes));
+    assert(bytes == 31116288ULL * 512);
+    assert(!storage_parse_block_sectors("0\n", &bytes));
+    assert(!storage_parse_block_sectors("", &bytes));
+    assert(!storage_parse_block_sectors(NULL, &bytes));
+
+    char buf[32];
+    storage_format_size(31116288ULL * 512, buf, sizeof(buf)); /* ~15.9 GB */
+    assert(strcmp(buf, "15.9 GB") == 0);
+    storage_format_size(512ULL * 1000 * 1000, buf, sizeof(buf));
+    assert(strcmp(buf, "512 MB") == 0);
+    storage_format_size(2ULL * 1000 * 1000 * 1000, buf, sizeof(buf));
+    assert(strcmp(buf, "2.0 GB") == 0);
+}
+
 int main(void)
 {
     test_memory_reg_parse();
     test_meminfo_round();
     test_ve_verdict();
     test_boot_source();
+    test_storage_parse();
     printf("quick_start logic tests passed\n");
     return 0;
 }

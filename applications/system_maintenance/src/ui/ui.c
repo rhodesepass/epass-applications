@@ -81,7 +81,7 @@ struct maintenance_ui {
 
 static const char *const MAIN_ITEMS[] = {
     "接口 Overlay", "扩展 Overlay", "查看启动配置", "保存并应用",
-    "FIDO 令牌", "格式化 SD 卡", "重启系统", "退出"
+    "FIDO 令牌", "格式化数据盘", "重启系统", "退出"
 };
 #define MAIN_ITEM_COUNT ((int)(sizeof(MAIN_ITEMS) / sizeof(MAIN_ITEMS[0])))
 
@@ -358,19 +358,19 @@ static void render_overlays(maintenance_ui_t *ui)
 static void render_boot_config(maintenance_ui_t *ui)
 {
     char text[2300];
-    const char *bootargs = boot_config_get(ui->config, "bootargs");
+    const char *extracmd = boot_config_get(ui->config, "extracmd");
     const char *interfaces = boot_config_get(ui->config, "interface");
     const char *extensions = boot_config_get(ui->config, "ext");
     lv_obj_t *label;
     snprintf(text, sizeof(text),
              "设备版本：%s\n屏幕：%s\n接口：%s\n扩展：%s\n\n"
-             "写入后端：%s（%s）\n%s\n\nbootargs:\n%s",
+             "写入后端：%s（%s）\n%s\n\nextracmd（追加到 cmdline 末尾）:\n%s",
              ui->config->device_rev[0] ? ui->config->device_rev : "未知",
              ui->config->screen[0] ? ui->config->screen : "未知",
              interfaces ? interfaces : "", extensions ? extensions : "",
              boot_config_backend_name(boot_config_backend(ui->config)),
              boot_config_can_write(ui->config) ? "可用" : "不可用",
-             boot_config_write_reason(ui->config), bootargs ? bootargs : "");
+             boot_config_write_reason(ui->config), extracmd ? extracmd : "");
     clear_body(ui);
     label = lv_label_create(ui->body);
     lv_obj_set_width(label, lv_pct(100));
@@ -430,7 +430,7 @@ static void render_format_progress(maintenance_ui_t *ui)
     lv_label_set_long_mode(ui->progress_note, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(ui->progress_note, LV_TEXT_ALIGN_CENTER, 0);
 
-    set_chrome(ui, "格式化 SD 卡", "");
+    set_chrome(ui, "格式化数据盘", "");
     ui->view = VIEW_FORMAT_PROGRESS;
 }
 

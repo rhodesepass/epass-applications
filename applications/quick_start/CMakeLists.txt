@@ -3,6 +3,7 @@ set(APPLICATION_NAME quick_start)
 # 纯逻辑部分独立成库, 供单测复用 (device-tree 解析 / VE 判定不碰硬件)
 add_library(quick_start_core STATIC
     src/system/sysinfo.c
+    src/system/storage.c
     src/system/ve_check.c
 )
 target_compile_features(quick_start_core PUBLIC c_std_11)

@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "ui.h"
+#include "../system/storage.h"
 #include "../system/sysinfo.h"
 #include "../system/ve_check.h"
 
@@ -326,6 +327,42 @@ static void build_page_selftest(tutorial_ui_t *ui)
     if(!mem_ok) ui->warn_static = true;
     y = selftest_row(ui, x, y, "实际内存", text, mem_ok ? COL_OK : COL_WARN);
 
+    /* 存储: 纯信息展示, 不并入自检结论 (SD-only 用法也算正常) */
+    storage_info_t st;
+    storage_probe(&st);
+
+    l = make_label(ui, ui->page, "NAND", ui->font_small, COL_MUTED);
+    lv_obj_set_pos(l, x, y);
+    l = make_label(ui, ui->page, st.nand_present ? "存在" : "未检出", ui->font_body,
+                   st.nand_present ? COL_TEXT : COL_WARN);
+    lv_obj_set_pos(l, x + scaled(ui, 100), y - scaled(ui, 4));
+    if(st.nand_present) {
+        char det[80];
+        lv_color_t dc = COL_MUTED;
+        if(st.ubi_ok) {
+            snprintf(det, sizeof(det), "已知坏块 %d，还可容纳 %d 块",
+                     st.ubi_bad, st.ubi_reserved);
+            if(st.ubi_bad > 0 || st.ubi_reserved == 0) dc = COL_WARN;
+        } else {
+            strcpy(det, "UBI 卷信息读取失败");
+            dc = COL_WARN;
+        }
+        l = make_label(ui, ui->page, det, ui->font_small, dc);
+        lv_obj_set_width(l, w - 2 * x);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+        lv_obj_set_pos(l, x, y + scaled(ui, 28));
+        y += scaled(ui, 52);
+    } else {
+        y += scaled(ui, 42);
+    }
+
+    if(st.sd_present) {
+        storage_format_size(st.sd_bytes, text, sizeof(text));
+        y = selftest_row(ui, x, y, "SD 卡", text, COL_TEXT);
+    } else {
+        y = selftest_row(ui, x, y, "SD 卡", "未插入", COL_MUTED);
+    }
+
     /* 视频解码器 (异步) */
     l = make_label(ui, ui->page, "视频解码器", ui->font_small, COL_MUTED);
     lv_obj_set_pos(l, x, y);
@@ -466,7 +503,7 @@ static void build_page(tutorial_ui_t *ui)
     case PAGE_APPS:
         build_shot_page(ui, "应用 / 文件", "applist",
             "第三方应用与文件管理。\n"
-            "· 应用装在 NAND 的 /app 或 SD 卡的 /sd/app\n"
+            "· 应用装在系统盘或数据盘下的 /app\n"
             "· 预装文本、图片查看器、游戏等\n"
             "· 选中即启动\n"
             "· 文件: 浏览文件, 可调起关联应用");
@@ -484,19 +521,19 @@ static void build_page(tutorial_ui_t *ui)
             "· 管理APP:连接网页/安卓APP\n"
             "· 文件MTP: 传输文件\n"
             "· FIDO密钥: 模拟#78c8ff 不安全 #的FIDO令牌\n"
-            "· 换模式: 设置里按 重置USB模式");
+            "· 换模式: 插拔USB线。或打开设备设置，选择 重置USB模式");
         break;
     case PAGE_SYSINFO:
         build_shot_page(ui, "设备信息", "sysinfo",
             "查看存储占用与版本, 从主菜单“设备”进入。\n"
             "· NAND / SD 卡容量、系统与程序版本\n"
-            "· 可在此格式化 SD 卡 (有二次确认)\n"
+            "· 可在此格式化数据盘 (有二次确认)\n"
             "· 确认框: KEY_3 确定, KEY_4 取消");
         break;
     case PAGE_MAINTENANCE:
         build_shot_page(ui, "系统维护", "applist",
             "更详细的设置可在 应用-系统维护 里打开:\n"
-            "· 格式化存储卡\n"
+            "· 格式化数据盘\n"
             "· 设置拓展口功能\n"
             "· 维护 FIDO 令牌\n"
             "· #78c8ff 启动USB高速模式#\n"

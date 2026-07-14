@@ -33,7 +33,7 @@ static void test_boot_source(void)
 static void test_boot_config(void)
 {
     static const unsigned char data[] =
-        "bootargs=ignored\n"
+        "extracmd=ignored\n"
         "device_rev=Epass 0.5\n"
         "screen=360x640\n"
         "interface=i2c0 mystery spi1\n"
@@ -61,7 +61,7 @@ static void test_boot_config(void)
                   "MTD") != NULL);
     assert(strstr(boot_config_backend_name(BOOT_CONFIG_BACKEND_SD_FILE),
                   "env.txt") != NULL);
-    assert(strcmp(boot_config_get(&config, "bootargs"), "ignored") == 0);
+    assert(strcmp(boot_config_get(&config, "extracmd"), "ignored") == 0);
     assert(boot_config_set(&config, "screen", "480x854") == 0);
     assert(boot_config_set(&config, "new_unknown", "keep me") == 0);
     assert(boot_config_serialize(&config, serialized, sizeof(serialized),
