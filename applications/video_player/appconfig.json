@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "name": "视频播放器",
+  "uuid": "5794ae54-c5b6-4d78-8cdd-6cb5fa4f48d2",
+  "description": "MP4/H.264 硬解播放器，支持暂停、时间轴拖动与硬件旋转。",
+  "icon": "icon.png",
+  "executable": {
+    "file": "video_player"
+  },
+  "type": "fg_ext",
+  "extensions": [".mp4"],
+  "screens": ["360x640", "480x854", "720x1280"]
+}
