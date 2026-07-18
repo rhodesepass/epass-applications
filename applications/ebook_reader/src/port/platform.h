@@ -1,6 +1,7 @@
 #pragma once
 
 #include "drm_warpper.h"
+#include "epass_input.h"
 #include <lvgl.h>
 #include <stdbool.h>
 
@@ -14,10 +15,10 @@ typedef enum {
 
 typedef struct {
     drm_warpper_t drm;
-    buffer_object_t buffer;
+    buffer_object_t buffers[2];
     lv_display_t *display;
-    uint8_t *draw_buffer;
-    int input_fd;
+    int input_fds[EPASS_INPUT_MAX_FDS];
+    int input_fd_count;
     int width, height;
 } ebook_platform_t;
 

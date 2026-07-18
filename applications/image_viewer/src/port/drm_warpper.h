@@ -55,4 +55,5 @@ int drm_warpper_init_layer(drm_warpper_t *dw, int layer_id, int width, int heigh
 int drm_warpper_allocate_buffer(drm_warpper_t *dw, int layer_id, buffer_object_t *buf);
 int drm_warpper_mount_layer(drm_warpper_t *dw, int layer_id, int x, int y,
                             buffer_object_t *buf);
+int drm_warpper_free_buffer(drm_warpper_t *dw, buffer_object_t *buf);
 int drm_warpper_destroy(drm_warpper_t *dw);

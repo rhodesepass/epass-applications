@@ -17,13 +17,11 @@ static uint32_t tick_ms(void)
 
 static void flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *pixels)
 {
+    (void)area;
     ebook_platform_t *platform = lv_display_get_user_data(display);
-    int width = area->x2 - area->x1 + 1;
-    int height = area->y2 - area->y1 + 1;
-    for(int row = 0; row < height; row++) {
-        uint8_t *dest = platform->buffer.vaddr +
-            (size_t)(area->y1 + row) * platform->buffer.pitch + (size_t)area->x1 * 2;
-        memcpy(dest, pixels + (size_t)row * width * 2, (size_t)width * 2);
+    if(lv_display_flush_is_last(display)) {
+        int idx = (pixels == platform->buffers[1].vaddr) ? 1 : 0;
+        drm_warpper_mount_layer(&platform->drm, 2, 0, 0, &platform->buffers[idx]);
     }
     lv_display_flush_ready(display);
 }
@@ -31,32 +29,32 @@ static void flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *pixe
 bool ebook_platform_init(ebook_platform_t *platform)
 {
     memset(platform, 0, sizeof(*platform));
-    platform->input_fd = -1;
+    platform->input_fd_count = 0;
     if(drm_warpper_init(&platform->drm) < 0) return false;
     platform->width = platform->drm.conn->modes[0].hdisplay;
     platform->height = platform->drm.conn->modes[0].vdisplay;
     if(drm_warpper_init_layer(&platform->drm, 2, platform->width, platform->height,
                               DRM_WARPPER_LAYER_MODE_RGB565) < 0 ||
-       drm_warpper_allocate_buffer(&platform->drm, 2, &platform->buffer) < 0 ||
-       drm_warpper_mount_layer(&platform->drm, 2, 0, 0, &platform->buffer) < 0) {
-        drm_warpper_destroy(&platform->drm);
-        return false;
+       drm_warpper_allocate_buffer(&platform->drm, 2, &platform->buffers[0]) < 0 ||
+       drm_warpper_allocate_buffer(&platform->drm, 2, &platform->buffers[1]) < 0 ||
+       drm_warpper_mount_layer(&platform->drm, 2, 0, 0, &platform->buffers[0]) < 0) {
+        goto fail;
     }
+    // DIRECT 模式让 LVGL 直接画进两块显存,零拷贝翻页需要行距与画面宽度紧密对齐
+    if(platform->buffers[0].pitch != (uint32_t)platform->width * 2) goto fail;
     lv_init();
     lv_tick_set_cb(tick_ms);
     platform->display = lv_display_create(platform->width, platform->height);
     if(!platform->display) goto fail;
     lv_display_set_color_format(platform->display, LV_COLOR_FORMAT_RGB565);
-    size_t rows = (size_t)(platform->height < 80 ? platform->height : 80);
-    size_t bytes = (size_t)platform->width * rows * 2;
-    platform->draw_buffer = malloc(bytes);
-    if(!platform->draw_buffer) goto fail;
+    size_t bytes = (size_t)platform->width * platform->height * 2;
     lv_display_set_user_data(platform->display, platform);
     lv_display_set_flush_cb(platform->display, flush_cb);
-    lv_display_set_buffers(platform->display, platform->draw_buffer, NULL, bytes,
-                           LV_DISPLAY_RENDER_MODE_PARTIAL);
-    platform->input_fd = open("/dev/input/event0", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-    if(platform->input_fd < 0) goto fail;
+    lv_display_set_buffers(platform->display, platform->buffers[0].vaddr,
+                           platform->buffers[1].vaddr, bytes,
+                           LV_DISPLAY_RENDER_MODE_DIRECT);
+    platform->input_fd_count = epass_input_open_nav(platform->input_fds, EPASS_INPUT_MAX_FDS);
+    if(platform->input_fd_count <= 0) goto fail;
     return true;
 fail:
     ebook_platform_destroy(platform);
@@ -66,14 +64,16 @@ fail:
 ebook_key_t ebook_platform_read_key(ebook_platform_t *platform)
 {
     struct input_event event;
-    while(read(platform->input_fd, &event, sizeof(event)) == sizeof(event)) {
-        if(event.type != EV_KEY || event.value == 0) continue;
-        switch(event.code) {
-        case KEY_1: case KEY_UP: case KEY_LEFT: return EBOOK_KEY_PREV;
-        case KEY_2: case KEY_DOWN: case KEY_RIGHT: return EBOOK_KEY_NEXT;
-        case KEY_3: case KEY_ENTER: return EBOOK_KEY_ENTER;
-        case KEY_4: case KEY_ESC: case KEY_BACK: return EBOOK_KEY_BACK;
-        default: break;
+    for(int i = 0; i < platform->input_fd_count; i++) {
+        while(read(platform->input_fds[i], &event, sizeof(event)) == sizeof(event)) {
+            if(event.type != EV_KEY || event.value == 0) continue;
+            switch(event.code) {
+            case KEY_1: case KEY_UP: case KEY_LEFT: return EBOOK_KEY_PREV;
+            case KEY_2: case KEY_DOWN: case KEY_RIGHT: return EBOOK_KEY_NEXT;
+            case KEY_3: case KEY_ENTER: return EBOOK_KEY_ENTER;
+            case KEY_4: case KEY_ESC: case KEY_BACK: return EBOOK_KEY_BACK;
+            default: break;
+            }
         }
     }
     return EBOOK_KEY_NONE;
@@ -87,10 +87,11 @@ void ebook_platform_set_brightness(int level)
 
 void ebook_platform_destroy(ebook_platform_t *platform)
 {
-    if(platform->input_fd >= 0) close(platform->input_fd);
+    epass_input_close(platform->input_fds, platform->input_fd_count);
     if(platform->display) lv_display_delete(platform->display);
-    free(platform->draw_buffer);
+    drm_warpper_free_buffer(&platform->drm, &platform->buffers[0]);
+    drm_warpper_free_buffer(&platform->drm, &platform->buffers[1]);
     drm_warpper_destroy(&platform->drm);
     memset(platform, 0, sizeof(*platform));
-    platform->input_fd = -1;
+    platform->input_fd_count = 0;
 }

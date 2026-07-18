@@ -1,5 +1,6 @@
 #include "../include/epass_game.h"
 #include "drm_warpper.h"
+#include "epass_input.h"
 #include "log.h"
 
 #include <fcntl.h>
@@ -17,7 +18,8 @@ typedef struct {
     buffer_object_t buffers[2];
     drm_warpper_queue_item_t items[2];
     drm_warpper_queue_item_t *acquired;
-    int input_fd;
+    int input_fds[EPASS_INPUT_MAX_FDS];
+    int input_fd_count;
     int width, height;
     bool drm_ready;
     bool layer_ready;
@@ -80,7 +82,7 @@ bool game_platform_init(game_platform_t *platform)
     impl = calloc(1, sizeof(*impl));
     if(!impl) return false;
     platform->impl = impl;
-    impl->input_fd = -1;
+    impl->input_fd_count = 0;
     impl->repeat_delay = 350;
     impl->repeat_interval = 90;
 
@@ -117,10 +119,9 @@ bool game_platform_init(game_platform_t *platform)
        drm_warpper_enqueue_display_item(&impl->drm, GAME_LAYER,
                                         &impl->items[1]))
         goto fail;
-    impl->input_fd = open("/dev/input/event0",
-                          O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-    if(impl->input_fd < 0) {
-        log_error("open /dev/input/event0 failed");
+    impl->input_fd_count = epass_input_open_nav(impl->input_fds, EPASS_INPUT_MAX_FDS);
+    if(impl->input_fd_count <= 0) {
+        log_error("no /dev/input/event* with nav keys found");
         goto fail;
     }
     return true;
@@ -162,7 +163,7 @@ void game_platform_destroy(game_platform_t *platform)
 {
     game_platform_impl_t *impl = get_impl(platform);
     if(!impl) return;
-    if(impl->input_fd >= 0) close(impl->input_fd);
+    epass_input_close(impl->input_fds, impl->input_fd_count);
     if(impl->drm_ready) {
         drm_warpper_stop(&impl->drm);
         if(impl->layer_ready)
@@ -207,16 +208,18 @@ void game_input_update(game_platform_t *platform)
     memset(impl->pressed, 0, sizeof(impl->pressed));
     memset(impl->repeated, 0, sizeof(impl->repeated));
     uint64_t now = game_monotonic_ms();
-    while(read(impl->input_fd, &event, sizeof(event)) == sizeof(event)) {
-        if(event.type != EV_KEY) continue;
-        int key = map_key(event.code);
-        if(key < 0) continue;
-        if(event.value == 1) {
-            if(!impl->down[key]) impl->pressed[key] = true;
-            impl->down[key] = true;
-            impl->next_repeat[key] = now + impl->repeat_delay;
-        } else if(event.value == 0) {
-            impl->down[key] = false;
+    for(int i = 0; i < impl->input_fd_count; i++) {
+        while(read(impl->input_fds[i], &event, sizeof(event)) == sizeof(event)) {
+            if(event.type != EV_KEY) continue;
+            int key = map_key(event.code);
+            if(key < 0) continue;
+            if(event.value == 1) {
+                if(!impl->down[key]) impl->pressed[key] = true;
+                impl->down[key] = true;
+                impl->next_repeat[key] = now + impl->repeat_delay;
+            } else if(event.value == 0) {
+                impl->down[key] = false;
+            }
         }
     }
     for(int key = 0; key < GAME_KEY_COUNT; key++) {

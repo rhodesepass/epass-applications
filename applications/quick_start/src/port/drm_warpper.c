@@ -26,21 +26,36 @@ static uint32_t property_id(int fd, uint32_t object, uint32_t type, const char *
     return found;
 }
 
-static int discover_plane(drm_warpper_t *dw)
+/* alpha 属性是 0..0xFFFF; 255*0x101 = 0xFFFF 正好回到不透明 */
+static inline uint64_t alpha_to_prop(uint8_t alpha)
 {
-    plane_prop_ids_t *p = &dw->props;
-    p->fb_id = property_id(dw->fd, dw->plane_id, DRM_MODE_OBJECT_PLANE, "FB_ID");
-    p->crtc_id = property_id(dw->fd, dw->plane_id, DRM_MODE_OBJECT_PLANE, "CRTC_ID");
-    p->src_x = property_id(dw->fd, dw->plane_id, DRM_MODE_OBJECT_PLANE, "SRC_X");
-    p->src_y = property_id(dw->fd, dw->plane_id, DRM_MODE_OBJECT_PLANE, "SRC_Y");
-    p->src_w = property_id(dw->fd, dw->plane_id, DRM_MODE_OBJECT_PLANE, "SRC_W");
-    p->src_h = property_id(dw->fd, dw->plane_id, DRM_MODE_OBJECT_PLANE, "SRC_H");
-    p->crtc_x = property_id(dw->fd, dw->plane_id, DRM_MODE_OBJECT_PLANE, "CRTC_X");
-    p->crtc_y = property_id(dw->fd, dw->plane_id, DRM_MODE_OBJECT_PLANE, "CRTC_Y");
-    p->crtc_w = property_id(dw->fd, dw->plane_id, DRM_MODE_OBJECT_PLANE, "CRTC_W");
-    p->crtc_h = property_id(dw->fd, dw->plane_id, DRM_MODE_OBJECT_PLANE, "CRTC_H");
+    return (uint64_t)alpha * 0x101;
+}
+
+static int discover_plane(drm_warpper_t *dw, int layer_id)
+{
+    uint32_t id = dw->plane_ids[layer_id];
+    plane_prop_ids_t *p = &dw->props[layer_id];
+    p->fb_id = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "FB_ID");
+    p->crtc_id = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "CRTC_ID");
+    p->src_x = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "SRC_X");
+    p->src_y = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "SRC_Y");
+    p->src_w = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "SRC_W");
+    p->src_h = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "SRC_H");
+    p->crtc_x = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "CRTC_X");
+    p->crtc_y = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "CRTC_Y");
+    p->crtc_w = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "CRTC_W");
+    p->crtc_h = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "CRTC_H");
+    p->alpha = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "alpha");
+    p->zpos = property_id(dw->fd, id, DRM_MODE_OBJECT_PLANE, "zpos");
     return p->fb_id && p->crtc_id && p->src_w && p->src_h &&
            p->crtc_w && p->crtc_h ? 0 : -1;
+}
+
+bool drm_warpper_layer_can_fade(const drm_warpper_t *dw, int layer_id)
+{
+    return layer_id >= 0 && layer_id < DRM_WARPPER_LAYER_COUNT &&
+           dw->plane_ids[layer_id] && dw->props[layer_id].alpha;
 }
 
 static int ensure_modeset(drm_warpper_t *dw)
@@ -97,8 +112,14 @@ int drm_warpper_init(drm_warpper_t *dw)
     dw->plane_res = drmModeGetPlaneResources(dw->fd);
     if(!dw->plane_res || !dw->plane_res->count_planes) goto fail;
     uint32_t index = dw->plane_res->count_planes > 2 ? 2 : dw->plane_res->count_planes - 1;
-    dw->plane_id = dw->plane_res->planes[index];
-    if(discover_plane(dw) || ensure_modeset(dw)) goto fail;
+    dw->plane_ids[DRM_WARPPER_LAYER_UI] = dw->plane_res->planes[index];
+    if(discover_plane(dw, DRM_WARPPER_LAYER_UI) || ensure_modeset(dw)) goto fail;
+    /* overlay 是锦上添花: 拿不到更高的 plane 或它没有 alpha 属性就退化成无过渡动画 */
+    if(index + 1 < dw->plane_res->count_planes) {
+        dw->plane_ids[DRM_WARPPER_LAYER_OVERLAY] = dw->plane_res->planes[index + 1];
+        if(discover_plane(dw, DRM_WARPPER_LAYER_OVERLAY))
+            dw->plane_ids[DRM_WARPPER_LAYER_OVERLAY] = 0;
+    }
     return 0;
 fail:
     drm_warpper_destroy(dw);
@@ -144,44 +165,89 @@ destroy: {
     return -1;
 }}
 
+int drm_warpper_mount_layer_alpha(drm_warpper_t *dw, int layer_id, int x, int y,
+                                  buffer_object_t *buf, uint8_t alpha)
+{
+    if(layer_id < 0 || layer_id >= DRM_WARPPER_LAYER_COUNT) return -1;
+    uint32_t id = dw->plane_ids[layer_id];
+    if(!id) return -1;
+    plane_prop_ids_t *p = &dw->props[layer_id];
+    drmModeAtomicReq *req = drmModeAtomicAlloc();
+    if(!req) return -1;
+    drmModeAtomicAddProperty(req, id, p->crtc_id, dw->crtc_id);
+    drmModeAtomicAddProperty(req, id, p->fb_id, buf->fb_id);
+    drmModeAtomicAddProperty(req, id, p->src_x, 0);
+    drmModeAtomicAddProperty(req, id, p->src_y, 0);
+    drmModeAtomicAddProperty(req, id, p->src_w, (uint64_t)buf->width << 16);
+    drmModeAtomicAddProperty(req, id, p->src_h, (uint64_t)buf->height << 16);
+    drmModeAtomicAddProperty(req, id, p->crtc_x, (uint64_t)(int64_t)x);
+    drmModeAtomicAddProperty(req, id, p->crtc_y, (uint64_t)(int64_t)y);
+    drmModeAtomicAddProperty(req, id, p->crtc_w, buf->width);
+    drmModeAtomicAddProperty(req, id, p->crtc_h, buf->height);
+    /* zpos 默认全是 0, 那样层序就取决于 normalize 时按 plane id 排序 —— 别赌, 显式写死。
+     * alpha 和 fb 同一次 commit 提交, 免得 overlay 挂上的瞬间以旧 alpha 闪一帧 */
+    if(p->zpos) drmModeAtomicAddProperty(req, id, p->zpos, (uint64_t)layer_id);
+    if(p->alpha) drmModeAtomicAddProperty(req, id, p->alpha, alpha_to_prop(alpha));
+    int rc = drmModeAtomicCommit(dw->fd, req, 0, NULL);
+    drmModeAtomicFree(req);
+    if(rc == 0) dw->mounted[layer_id] = buf;
+    return rc;
+}
+
 int drm_warpper_mount_layer(drm_warpper_t *dw, int layer_id, int x, int y,
                             buffer_object_t *buf)
 {
-    (void)layer_id;
-    plane_prop_ids_t *p = &dw->props;
+    return drm_warpper_mount_layer_alpha(dw, layer_id, x, y, buf, 255);
+}
+
+int drm_warpper_set_layer_alpha(drm_warpper_t *dw, int layer_id, uint8_t alpha)
+{
+    if(!drm_warpper_layer_can_fade(dw, layer_id)) return -1;
     drmModeAtomicReq *req = drmModeAtomicAlloc();
     if(!req) return -1;
-    drmModeAtomicAddProperty(req, dw->plane_id, p->crtc_id, dw->crtc_id);
-    drmModeAtomicAddProperty(req, dw->plane_id, p->fb_id, buf->fb_id);
-    drmModeAtomicAddProperty(req, dw->plane_id, p->src_x, 0);
-    drmModeAtomicAddProperty(req, dw->plane_id, p->src_y, 0);
-    drmModeAtomicAddProperty(req, dw->plane_id, p->src_w, (uint64_t)buf->width << 16);
-    drmModeAtomicAddProperty(req, dw->plane_id, p->src_h, (uint64_t)buf->height << 16);
-    drmModeAtomicAddProperty(req, dw->plane_id, p->crtc_x, (uint64_t)(int64_t)x);
-    drmModeAtomicAddProperty(req, dw->plane_id, p->crtc_y, (uint64_t)(int64_t)y);
-    drmModeAtomicAddProperty(req, dw->plane_id, p->crtc_w, buf->width);
-    drmModeAtomicAddProperty(req, dw->plane_id, p->crtc_h, buf->height);
+    drmModeAtomicAddProperty(req, dw->plane_ids[layer_id],
+                             dw->props[layer_id].alpha, alpha_to_prop(alpha));
     int rc = drmModeAtomicCommit(dw->fd, req, 0, NULL);
     drmModeAtomicFree(req);
-    if(rc == 0) dw->mounted = buf;
     return rc;
+}
+
+int drm_warpper_unmount_layer(drm_warpper_t *dw, int layer_id)
+{
+    if(layer_id < 0 || layer_id >= DRM_WARPPER_LAYER_COUNT) return -1;
+    uint32_t id = dw->plane_ids[layer_id];
+    if(!id || !dw->props[layer_id].fb_id) return -1;
+    drmModeAtomicReq *req = drmModeAtomicAlloc();
+    if(!req) return -1;
+    drmModeAtomicAddProperty(req, id, dw->props[layer_id].crtc_id, 0);
+    drmModeAtomicAddProperty(req, id, dw->props[layer_id].fb_id, 0);
+    int rc = drmModeAtomicCommit(dw->fd, req, 0, NULL);
+    drmModeAtomicFree(req);
+    if(rc == 0) dw->mounted[layer_id] = NULL;
+    return rc;
+}
+
+int drm_warpper_free_buffer(drm_warpper_t *dw, buffer_object_t *buf)
+{
+    if(dw->fd < 0 || !buf) return -1;
+    if(buf->fb_id) drmModeRmFB(dw->fd, buf->fb_id);
+    if(buf->vaddr) munmap(buf->vaddr, buf->size);
+    if(buf->handle) {
+        struct drm_mode_destroy_dumb destroy = {.handle = buf->handle};
+        drmIoctl(dw->fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
+    }
+    for(int i = 0; i < DRM_WARPPER_LAYER_COUNT; i++)
+        if(dw->mounted[i] == buf) dw->mounted[i] = NULL;
+    memset(buf, 0, sizeof(*buf));
+    return 0;
 }
 
 int drm_warpper_destroy(drm_warpper_t *dw)
 {
-    if(dw->fd >= 0 && dw->mounted) {
-        drmModeAtomicReq *req = drmModeAtomicAlloc();
-        if(req) {
-            drmModeAtomicAddProperty(req, dw->plane_id, dw->props.crtc_id, 0);
-            drmModeAtomicAddProperty(req, dw->plane_id, dw->props.fb_id, 0);
-            drmModeAtomicCommit(dw->fd, req, 0, NULL);
-            drmModeAtomicFree(req);
-        }
-        drmModeRmFB(dw->fd, dw->mounted->fb_id);
-        munmap(dw->mounted->vaddr, dw->mounted->size);
-        struct drm_mode_destroy_dumb destroy = {.handle = dw->mounted->handle};
-        drmIoctl(dw->fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
-    }
+    for(int i = 0; dw->fd >= 0 && i < DRM_WARPPER_LAYER_COUNT; i++)
+        drm_warpper_unmount_layer(dw, i);
+    for(int i = 0; i < DRM_WARPPER_LAYER_COUNT; i++)
+        if(dw->mounted[i]) drm_warpper_free_buffer(dw, dw->mounted[i]);
     drmModeFreePlaneResources(dw->plane_res);
     drmModeFreeConnector(dw->conn);
     drmModeFreeResources(dw->res);

@@ -163,9 +163,23 @@ int drm_warpper_mount_layer(drm_warpper_t *dw, int layer_id, int x, int y,
     return rc;
 }
 
+int drm_warpper_free_buffer(drm_warpper_t *dw, buffer_object_t *buf)
+{
+    if(dw->fd < 0 || !buf) return -1;
+    if(buf->fb_id) drmModeRmFB(dw->fd, buf->fb_id);
+    if(buf->vaddr) munmap(buf->vaddr, buf->size);
+    if(buf->handle) {
+        struct drm_mode_destroy_dumb destroy = {.handle = buf->handle};
+        drmIoctl(dw->fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
+    }
+    if(dw->mounted == buf) dw->mounted = NULL;
+    memset(buf, 0, sizeof(*buf));
+    return 0;
+}
+
 int drm_warpper_destroy(drm_warpper_t *dw)
 {
-    if(dw->fd >= 0 && dw->mounted) {
+    if(dw->fd >= 0 && dw->plane_id && dw->props.fb_id) {
         drmModeAtomicReq *req = drmModeAtomicAlloc();
         if(req) {
             drmModeAtomicAddProperty(req, dw->plane_id, dw->props.crtc_id, 0);
@@ -173,11 +187,8 @@ int drm_warpper_destroy(drm_warpper_t *dw)
             drmModeAtomicCommit(dw->fd, req, 0, NULL);
             drmModeAtomicFree(req);
         }
-        drmModeRmFB(dw->fd, dw->mounted->fb_id);
-        munmap(dw->mounted->vaddr, dw->mounted->size);
-        struct drm_mode_destroy_dumb destroy = {.handle = dw->mounted->handle};
-        drmIoctl(dw->fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
     }
+    if(dw->mounted) drm_warpper_free_buffer(dw, dw->mounted);
     drmModeFreePlaneResources(dw->plane_res);
     drmModeFreeConnector(dw->conn);
     drmModeFreeResources(dw->res);

@@ -34,6 +34,7 @@ target_compile_options(${APPLICATION_NAME} PRIVATE
 )
 target_link_libraries(${APPLICATION_NAME} PRIVATE
     quick_start_core
+    epass_input
     lvgl
     epass_fonts
     PNG::PNG
@@ -46,9 +47,13 @@ target_link_libraries(${APPLICATION_NAME} PRIVATE
 # dev 工具: 离屏渲染各页到 PNG, 不依赖设备 (host 跑, 字体指向共享母本)
 option(QUICK_START_PREVIEW "Build quick_start offscreen page preview tool" OFF)
 if(QUICK_START_PREVIEW)
+    # platform/drm 只为满足 ui.c 的符号引用而链入; preview 不调 platform_init,
+    # 所以 has_overlay 恒为 0, overlay 相关调用全是空操作, 碰不到 /dev/dri
     add_executable(quick_start_preview
         tools/preview.c
         src/ui/ui.c
+        src/port/platform.c
+        src/port/drm_warpper.c
     )
     target_compile_features(quick_start_preview PRIVATE c_std_11)
     target_include_directories(quick_start_preview PRIVATE
@@ -58,7 +63,7 @@ if(QUICK_START_PREVIEW)
         ${FREETYPE_INCLUDE_DIRS}
     )
     target_link_libraries(quick_start_preview PRIVATE
-        quick_start_core lvgl epass_fonts PNG::PNG
+        quick_start_core epass_input lvgl epass_fonts PNG::PNG
         ${LIBDRM_LIBRARIES} ${FREETYPE_LIBRARIES} pthread m)
 endif()
 

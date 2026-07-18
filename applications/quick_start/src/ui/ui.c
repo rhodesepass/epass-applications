@@ -6,6 +6,7 @@
 #include "../system/ve_check.h"
 
 #include <lvgl.h>
+#include <src/misc/cache/instance/lv_image_cache.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,11 +45,12 @@ typedef enum {
 typedef enum { ARROW_LEFT, ARROW_RIGHT, ARROW_DOWN_LEFT, ARROW_UP_LEFT } arrow_dir_t;
 
 #define MAX_ARROWS 8
+#define SHOT_COUNT 7 /* 截图张数; PAGE_MAINTENANCE 与 PAGE_APPS 共用 applist */
+#define FADE_MS 120  /* 单程淡入/淡出时长, 翻页总耗时要加上两程 */
 
 struct tutorial_ui {
     tutorial_platform_t *platform;
     lv_font_t *font_title, *font_body, *font_small;
-    lv_font_t *font_h1, *font_key; /* 第 1 页专用大字号 */
     lv_obj_t *root;
     lv_obj_t *page;       /* 内容容器, 翻页时 clean 重建 */
     lv_obj_t *hint, *pageno;
@@ -60,6 +62,11 @@ struct tutorial_ui {
     /* 字体子集不保证有箭头字形, lv_line 自画; 点数组须比 lv_line 活得久 */
     lv_point_precise_t arrow_pts[MAX_ARROWS][5];
     int arrow_count;
+
+    /* 截图预渲染 (见 preload_step), 与 SHOT_NAMES 一一对应, 常驻到退出 */
+    lv_draw_buf_t *shots[SHOT_COUNT];
+    int preload_index;
+    bool preload_hold;
 
     /* 第 2 页自检 (VE 检测跑在工作线程, tick 里轮询回填) */
     ve_check_result_t ve;
@@ -154,12 +161,12 @@ static void build_page_keymap(tutorial_ui_t *ui)
     const int arrow = scaled(ui, 20);
 
     /* 欢迎语避开按键列: 720p 列占右侧上半屏 → 居中下移; 360p 列占左侧 → 放右上空区 */
-    lv_obj_t *title = make_label(ui, ui->page, "欢迎使用\n电子通行证", ui->font_h1, COL_ACCENT);
+    lv_obj_t *title = make_label(ui, ui->page, "欢迎使用\n电子通行证", ui->font_title, COL_ACCENT);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
     if(ui->is_720) lv_obj_align(title, LV_ALIGN_CENTER, 0, scaled(ui, 96));
     else lv_obj_align(title, LV_ALIGN_TOP_RIGHT, -scaled(ui, 16), scaled(ui, 20));
 
-    lv_obj_t *go = make_label(ui, ui->page, "请按 KEY_3 继续\n按 KEY_4 跳过", ui->font_key, COL_TEXT);
+    lv_obj_t *go = make_label(ui, ui->page, "请按 KEY_3 继续\n按 KEY_4 跳过", ui->font_body, COL_TEXT);
     lv_obj_set_style_text_align(go, LV_TEXT_ALIGN_CENTER, 0);
     if(ui->is_720) lv_obj_align(go, LV_ALIGN_CENTER, 0, scaled(ui, 160));
     else lv_obj_align(go, LV_ALIGN_TOP_RIGHT, -scaled(ui, 28), scaled(ui, 120));
@@ -169,7 +176,7 @@ static void build_page_keymap(tutorial_ui_t *ui)
          * KEY_1 在屏幕上沿之上 → 顶角 ↖; KEY_2~KEY_4/刷机 约 34/127/220/313;
          * SD 卡槽 (非按键, 弱化显示) 约 451; 电源在左下角。 */
         make_arrow(ui, ui->page, ARROW_UP_LEFT, scaled(ui, 4), scaled(ui, 2), arrow);
-        lv_obj_t *l = make_label(ui, ui->page, "KEY_1  上翻", ui->font_key, COL_TEXT);
+        lv_obj_t *l = make_label(ui, ui->page, "KEY_1  上翻", ui->font_body, COL_TEXT);
         lv_obj_set_pos(l, scaled(ui, 32), scaled(ui, 2));
 
         static const struct { const char *text; int center; } rows[] = {
@@ -179,7 +186,7 @@ static void build_page_keymap(tutorial_ui_t *ui)
         for(size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
             int c = scaled(ui, rows[i].center);
             make_arrow(ui, ui->page, ARROW_LEFT, scaled(ui, 4), c - arrow / 2, arrow);
-            l = make_label(ui, ui->page, rows[i].text, ui->font_key, COL_TEXT);
+            l = make_label(ui, ui->page, rows[i].text, ui->font_body, COL_TEXT);
             /* KEY_2 物理位置贴顶, 标签下让一点避免和 KEY_1 行叠 */
             int ly = c - scaled(ui, 12);
             int min_ly = scaled(ui, 28);
@@ -188,11 +195,11 @@ static void build_page_keymap(tutorial_ui_t *ui)
 
         make_arrow_color(ui, ui->page, ARROW_LEFT, scaled(ui, 4),
                          scaled(ui, 451) - arrow / 2, arrow, COL_MUTED);
-        l = make_label(ui, ui->page, "SD 卡槽", ui->font_key, COL_MUTED);
+        l = make_label(ui, ui->page, "SD 卡槽", ui->font_body, COL_MUTED);
         lv_obj_set_pos(l, scaled(ui, 32), scaled(ui, 451) - scaled(ui, 12));
 
         make_arrow(ui, ui->page, ARROW_DOWN_LEFT, scaled(ui, 4), h - scaled(ui, 56), arrow);
-        lv_obj_t *pw = make_label(ui, ui->page, "电源", ui->font_key, COL_TEXT);
+        lv_obj_t *pw = make_label(ui, ui->page, "电源", ui->font_body, COL_TEXT);
         lv_obj_set_pos(pw, scaled(ui, 32), h - scaled(ui, 58));
     } else {
         /* 720p 机种: 按键在机身右侧, 从上到 50% 屏高等距; KEY_4 与刷机共用 */
@@ -201,7 +208,7 @@ static void build_page_keymap(tutorial_ui_t *ui)
         for(int i = 0; i < 5; i++) {
             int y = span * i / 4;
             make_arrow(ui, ui->page, ARROW_RIGHT, w - arrow - scaled(ui, 4), y, arrow);
-            lv_obj_t *l = make_label(ui, ui->page, rows[i], ui->font_key, COL_TEXT);
+            lv_obj_t *l = make_label(ui, ui->page, rows[i], ui->font_body, COL_TEXT);
             lv_obj_update_layout(l);
             lv_obj_set_pos(l, w - scaled(ui, 32) - lv_obj_get_width(l), y - scaled(ui, 2));
         }
@@ -399,6 +406,60 @@ static void build_page_selftest(tutorial_ui_t *ui)
 
 /* ---------------- 第 3~8 页: 主程序各屏 (截图 + 要点) ---------------- */
 
+static void shot_path(const tutorial_ui_t *ui, const char *name, char *out, size_t len)
+{
+    snprintf(out, len, "A:%s/assets/shots/%d/%s.jpg", ui->base_dir, scaled(ui, 180), name);
+}
+
+/* 按页面出现顺序, 先渲染先用到的 */
+static const char *const SHOT_NAMES[SHOT_COUNT] = {
+    "playback", "mainmenu", "oplist", "applist", "settings", "usbselect", "sysinfo",
+};
+
+static int shot_index(const char *name)
+{
+    for(int i = 0; i < SHOT_COUNT; i++)
+        if(strcmp(SHOT_NAMES[i], name) == 0) return i;
+    return -1;
+}
+
+/* 解一张截图在 F1C200s 上是几百 ms 量级, 摊在按键之后就是肉眼可见的卡顿。这里趁空闲
+ * 把 JPG 预先画成屏幕格式 (RGB565) 的常驻位图, 翻页时 lv_image 直接贴, 不再碰解码器。
+ *
+ * 不走 image cache 是因为它取决于哪个 JPEG 后端: 设备上是 libjpeg_turbo (整图入 cache),
+ * 本地 dev 构建却是 TJPGD —— 它按 MCU 流式解, 全程不进 cache, 每次绘制都重解一遍。
+ * 自己持有位图两边行为一致, 也省掉 cache 里 RGB888 到屏幕格式的每帧转换。 */
+static void preload_step(tutorial_ui_t *ui)
+{
+    if(ui->preload_index >= SHOT_COUNT) return;
+    int i = ui->preload_index++;
+
+    int w = scaled(ui, 180);
+    int h = w * ui->platform->height / ui->platform->width;
+    lv_draw_buf_t *buf = lv_draw_buf_create(w, h, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
+    if(!buf) return;
+
+    char src[288];
+    shot_path(ui, SHOT_NAMES[i], src, sizeof(src));
+
+    /* canvas 只是借 lv_draw_image 的力把图解到 buf 里, 不上屏; 它析构不碰 buf */
+    lv_obj_t *canvas = lv_canvas_create(ui->root);
+    lv_obj_add_flag(canvas, LV_OBJ_FLAG_HIDDEN);
+    lv_canvas_set_draw_buf(canvas, buf);
+
+    lv_layer_t layer;
+    lv_canvas_init_layer(canvas, &layer);
+    lv_draw_image_dsc_t dsc;
+    lv_draw_image_dsc_init(&dsc);
+    dsc.src = src;
+    lv_area_t area = { 0, 0, w - 1, h - 1 };
+    lv_draw_image(&layer, &dsc, &area);
+    lv_canvas_finish_layer(canvas, &layer);
+
+    lv_obj_delete(canvas);
+    ui->shots[i] = buf;
+}
+
 static void build_shot_page(tutorial_ui_t *ui, const char *title_text,
                             const char *shot_name, const char *bullets)
 {
@@ -410,10 +471,15 @@ static void build_shot_page(tutorial_ui_t *ui, const char *title_text,
 
     int img_w = scaled(ui, 180);
     int img_h = img_w * ui->platform->height / w;
-    char src[288];
-    snprintf(src, sizeof(src), "A:%s/assets/shots/%d/%s.jpg", ui->base_dir, img_w, shot_name);
     lv_obj_t *img = lv_image_create(ui->page);
-    lv_image_set_src(img, src);
+    int si = shot_index(shot_name);
+    if(si >= 0 && ui->shots[si]) {
+        lv_image_set_src(img, ui->shots[si]);
+    } else { /* 还没轮到预渲染, 现解一次 */
+        char src[288];
+        shot_path(ui, shot_name, src, sizeof(src));
+        lv_image_set_src(img, src);
+    }
     lv_obj_set_style_border_width(img, scaled(ui, 2), 0);
     lv_obj_set_style_border_color(img, lv_color_hex(0x3a4350), 0);
     lv_obj_align(img, LV_ALIGN_TOP_MID, 0, scaled(ui, 58));
@@ -473,6 +539,7 @@ static void build_page(tutorial_ui_t *ui)
 {
     ui->ve_value = ui->ve_detail = ui->summary = NULL; /* 旧页对象即将销毁 */
     ui->arrow_count = 0;
+    ui->preload_hold = true;
     lv_obj_clean(ui->page);
 
     switch(ui->page_index) {
@@ -554,6 +621,18 @@ static void build_page(tutorial_ui_t *ui)
         lv_label_set_text(ui->hint, "KEY_1/KEY_3 翻页 · KEY_4 退出");
 }
 
+/* 翻页: 先用遮罩盖住再重建。重建期间主线程要卡上几百毫秒 (字形 rasterize 等),
+ * 遮住总比让人盯着冻住的旧页面强 —— 这是遮丑, 翻页本身并没有变快。
+ * 遮罩静止时不需要驱动, 而淡入淡出这两段主线程正好闲着, 所以不用另起线程;
+ * 也因此 DRM commit 全在主线程, 和 LVGL 的 flush_cb 天然互斥, 不用加锁。 */
+static void goto_page(tutorial_ui_t *ui)
+{
+    tutorial_platform_overlay_fade(ui->platform, 0, 255, FADE_MS);
+    build_page(ui);
+    lv_refr_now(NULL); /* 揭开之前先把新页面真画进显存, 否则会露出重建到一半的样子 */
+    tutorial_platform_overlay_fade(ui->platform, 255, 0, FADE_MS);
+}
+
 /* ---------------- 对外接口 ---------------- */
 
 tutorial_ui_t *tutorial_ui_create(tutorial_platform_t *platform)
@@ -579,10 +658,7 @@ tutorial_ui_t *tutorial_ui_create(tutorial_platform_t *platform)
     ui->font_title = load_font("SourceHanSerifSC-Heavy.otf", scaled(ui, 30));
     ui->font_body = load_font("SourceHanSansSC-Regular.otf", scaled(ui, 19));
     ui->font_small = load_font("SourceHanSansSC-Regular.otf", scaled(ui, 15));
-    ui->font_h1 = load_font("SourceHanSerifSC-Heavy.otf", scaled(ui, 30));
-    ui->font_key = load_font("SourceHanSansSC-Regular.otf", scaled(ui, 19));
-    if(!ui->font_title || !ui->font_body || !ui->font_small ||
-       !ui->font_h1 || !ui->font_key) {
+    if(!ui->font_title || !ui->font_body || !ui->font_small) {
         tutorial_ui_destroy(ui);
         return NULL;
     }
@@ -590,6 +666,8 @@ tutorial_ui_t *tutorial_ui_create(tutorial_platform_t *platform)
     ui->root = lv_screen_active();
     lv_obj_set_style_bg_color(ui->root, COL_BG, 0);
     lv_obj_set_style_text_font(ui->root, ui->font_body, 0);
+    /* 遮罩就是一块页面底色, 淡入淡出时看起来像页面自己在明暗切换 */
+    tutorial_platform_overlay_fill(platform, lv_color_to_u16(COL_BG));
 
     ui->page = lv_obj_create(ui->root);
     lv_obj_remove_style_all(ui->page);
@@ -615,11 +693,11 @@ void tutorial_ui_handle_key(tutorial_ui_t *ui, tutorial_key_t key)
 {
     switch(key) {
     case TUTORIAL_KEY_PREV:
-        if(ui->page_index > 0) { ui->page_index--; build_page(ui); }
+        if(ui->page_index > 0) { ui->page_index--; goto_page(ui); }
         break;
     case TUTORIAL_KEY_NEXT:
     case TUTORIAL_KEY_ENTER:
-        if(ui->page_index < PAGE_COUNT - 1) { ui->page_index++; build_page(ui); }
+        if(ui->page_index < PAGE_COUNT - 1) { ui->page_index++; goto_page(ui); }
         else if(key == TUTORIAL_KEY_ENTER) ui->should_exit = true;
         break;
     case TUTORIAL_KEY_BACK:
@@ -634,6 +712,12 @@ void tutorial_ui_tick(tutorial_ui_t *ui)
 {
     if(ui->ve_started && !ui->ve_shown && ui->ve_value)
         ve_show_result(ui);
+    /* 刚翻完页: 这一轮让给 lv_timer_handler 先把新页面画出来, 别拿解码挡住这一帧 */
+    if(ui->preload_hold) {
+        ui->preload_hold = false;
+        return;
+    }
+    preload_step(ui);
 }
 
 bool tutorial_ui_should_exit(const tutorial_ui_t *ui)
@@ -648,10 +732,15 @@ void tutorial_ui_destroy(tutorial_ui_t *ui)
     for(int i = 0; i < 150 && ui->ve_started &&
         atomic_load(&ui->ve.status) == VE_CHECK_PENDING; i++)
         nanosleep(&(struct timespec){ 0, 10000000 }, NULL);
+    /* 先拆掉引用这些位图的 lv_image, 再放 buf; 否则 display 销毁时会摸到已释放的内存 */
+    if(ui->page) lv_obj_clean(ui->page);
+    for(int i = 0; i < SHOT_COUNT; i++) {
+        if(!ui->shots[i]) continue;
+        lv_image_cache_drop(ui->shots[i]);
+        lv_draw_buf_destroy(ui->shots[i]);
+    }
     if(ui->font_title) lv_freetype_font_delete(ui->font_title);
     if(ui->font_body) lv_freetype_font_delete(ui->font_body);
     if(ui->font_small) lv_freetype_font_delete(ui->font_small);
-    if(ui->font_h1) lv_freetype_font_delete(ui->font_h1);
-    if(ui->font_key) lv_freetype_font_delete(ui->font_key);
     free(ui);
 }
