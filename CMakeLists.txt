@@ -33,6 +33,18 @@ if(EPASS_FONTS_FOUND)
   target_compile_definitions(epass_fonts INTERFACE
     FONT_REGISTRY_DIR="${EPASS_FONTS_DIR}"
   )
+  # 角色 -> 路径是 epass-fonts 的对外契约 (roles.conf 单一真值源, 经 .pc 透传);
+  # 应用应当用这些宏, 不要写死字体文件名 —— 换字体只动 roles.conf。
+  foreach(role body title display icon)
+    unset(EPASS_FONTS_ROLE_PATH)
+    pkg_get_variable(EPASS_FONTS_ROLE_PATH epass-fonts font_${role})
+    if(EPASS_FONTS_ROLE_PATH)
+      string(TOUPPER ${role} EPASS_FONTS_ROLE_UPPER)
+      target_compile_definitions(epass_fonts INTERFACE
+        FONT_${EPASS_FONTS_ROLE_UPPER}_PATH="${EPASS_FONTS_ROLE_PATH}"
+      )
+    endif()
+  endforeach()
 else()
   message(STATUS "epass-fonts not found (dev fallback: apps may bundle fonts)")
 endif()

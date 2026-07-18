@@ -16,6 +16,13 @@
 #ifndef FONT_REGISTRY_DIR
 #define FONT_REGISTRY_DIR "/usr/share/fonts/epass" /* dev fallback */
 #endif
+/* 角色路径宏来自 epass-fonts 的 .pc(顶层 CMakeLists 透传)；纯 dev 构建没有 */
+#ifndef FONT_TITLE_PATH
+#define FONT_TITLE_PATH NULL
+#endif
+#ifndef FONT_BODY_PATH
+#define FONT_BODY_PATH NULL
+#endif
 
 #define COMMUNITY_URL "https://epm.iccmc.cc"
 
@@ -81,13 +88,27 @@ static int scaled(const tutorial_ui_t *ui, int value)
     return value * ui->platform->width / 360;
 }
 
-static lv_font_t *load_font(const char *file, int px)
+/*
+ * 角色 -> 文件名归 epass-fonts 的 roles.conf 管，构建期经 .pc 透传成
+ * FONT_TITLE_PATH/FONT_BODY_PATH(见顶层 CMakeLists)，应用不写死文件名。
+ * dev_file 只给没有 .pc 的纯本地构建和 EPASS_FONTS_DIR 覆盖(preview 注入
+ * 母本目录)兜底用。
+ */
+static lv_font_t *load_font(const char *role_path, const char *dev_file, int px)
 {
-    char path[512];
+    char buf[512];
     const char *dir = getenv("EPASS_FONTS_DIR"); /* dev/preview 覆盖 */
-    snprintf(path, sizeof(path), "%s/%s", dir ? dir : FONT_REGISTRY_DIR, file);
-    if(access(path, R_OK) != 0)
-        snprintf(path, sizeof(path), "/usr/share/fonts/epass/%s", file);
+    const char *path;
+
+    if(dir) {
+        snprintf(buf, sizeof(buf), "%s/%s", dir, dev_file);
+        path = buf;
+    } else if(role_path && access(role_path, R_OK) == 0) {
+        path = role_path;
+    } else {
+        snprintf(buf, sizeof(buf), "%s/%s", FONT_REGISTRY_DIR, dev_file);
+        path = buf;
+    }
     return lv_freetype_font_create(path, LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
                                    (uint32_t)px, LV_FREETYPE_FONT_STYLE_NORMAL);
 }
@@ -610,7 +631,7 @@ static void build_page(tutorial_ui_t *ui)
     default: break;
     }
 
-    char pageno[16];
+    char pageno[32];
     snprintf(pageno, sizeof(pageno), "%d / %d", ui->page_index + 1, PAGE_COUNT);
     lv_label_set_text(ui->pageno, pageno);
     if(ui->page_index == 0)
@@ -655,9 +676,9 @@ tutorial_ui_t *tutorial_ui_create(tutorial_platform_t *platform)
         if(!getcwd(ui->base_dir, sizeof(ui->base_dir))) strcpy(ui->base_dir, ".");
     }
 
-    ui->font_title = load_font("SourceHanSerifSC-Heavy.otf", scaled(ui, 30));
-    ui->font_body = load_font("SourceHanSansSC-Regular.otf", scaled(ui, 19));
-    ui->font_small = load_font("SourceHanSansSC-Regular.otf", scaled(ui, 15));
+    ui->font_title = load_font(FONT_TITLE_PATH, "SourceHanSerifSC-Heavy.otf", scaled(ui, 30));
+    ui->font_body = load_font(FONT_BODY_PATH, "SourceHanSansSC-Regular.otf", scaled(ui, 19));
+    ui->font_small = load_font(FONT_BODY_PATH, "SourceHanSansSC-Regular.otf", scaled(ui, 15));
     if(!ui->font_title || !ui->font_body || !ui->font_small) {
         tutorial_ui_destroy(ui);
         return NULL;
