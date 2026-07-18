@@ -33,7 +33,15 @@ ffmpeg -loglevel error -y -i "$TMP/playback.png" "$BG"
 
 # --- 逐屏截图 ---
 # screen_id_t: 0=mainmenu 1=oplist 2=sysinfo 6=settings 7=applist 10=usbselect
-# (displayimg 不截: 底部路径标签会泄露宿主机路径, 教程页也用不上)
+#
+# displayimg (dispimg.jpg) 不走本流水线: 它的底部路径标签经 realpath 会泄露宿主机
+# 绝对路径。它用 drm_app_neo 的 PC Target 手工截 + 后期修标签:
+#   1) 样例卡放进 drm_app_neo/build-pc/pcdata/dispimg/kuolie_01.png (360x640, 满屏 1:1)
+#   2) cd drm_app_neo/build-pc && SDL_VIDEODRIVER=dummy \
+#      EPASS_AUTOKEY="3000:enter" EPASS_SHOT=out.bmp EPASS_SHOT_MS=6000 ./app_pc_360
+#      (启动落在 spinner 播放态, enter 即进扩列图)
+#   3) PIL 用样例卡原像素盖掉 y 596..640 的标签区, 再以 body 字体 14px 在 (10,615)
+#      重画设备真实路径 "A:/dispimg/kuolie_01.png", 然后同下方一样出两档 JPEG。
 declare -A SCREENS=( [mainmenu]=0 [oplist]=1 [sysinfo]=2 [settings]=6 [applist]=7 [usbselect]=10 )
 for name in "${!SCREENS[@]}"; do
     SIM_SCREEN="${SCREENS[$name]}" SIM_SHOT="$TMP/$name.bmp" SIM_BG="$BG" \

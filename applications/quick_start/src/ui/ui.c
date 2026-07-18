@@ -40,6 +40,7 @@ typedef enum {
     PAGE_PLAYBACK,
     PAGE_MAINMENU,
     PAGE_OPLIST,
+    PAGE_DISPIMG,
     PAGE_APPS,
     PAGE_SETTINGS,
     PAGE_USB,
@@ -52,7 +53,7 @@ typedef enum {
 typedef enum { ARROW_LEFT, ARROW_RIGHT, ARROW_DOWN_LEFT, ARROW_UP_LEFT } arrow_dir_t;
 
 #define MAX_ARROWS 8
-#define SHOT_COUNT 7 /* 截图张数; PAGE_MAINTENANCE 与 PAGE_APPS 共用 applist */
+#define SHOT_COUNT 8 /* 截图张数; PAGE_MAINTENANCE 与 PAGE_APPS 共用 applist */
 #define FADE_MS 120  /* 单程淡入/淡出时长, 翻页总耗时要加上两程 */
 
 struct tutorial_ui {
@@ -223,13 +224,16 @@ static void build_page_keymap(tutorial_ui_t *ui)
         lv_obj_t *pw = make_label(ui, ui->page, "电源", ui->font_body, COL_TEXT);
         lv_obj_set_pos(pw, scaled(ui, 32), h - scaled(ui, 58));
     } else {
-        /* 720p 机种: 按键在机身右侧, 从上到 50% 屏高等距; KEY_4 与刷机共用 */
-        static const char *rows[] = { "电源", "上翻  KEY_1", "下翻  KEY_2", "确定  KEY_3", "退出/刷机  KEY_4" };
-        int span = h * 50 / 100 - arrow;
-        for(int i = 0; i < 5; i++) {
-            int y = span * i / 4;
+        /* 720p 机种, 按键在机身右侧, 按真机照片实测对齐 (360 基准坐标, 中心 y):
+         * 电源 46 单独靠上, KEY_1~KEY_4 为 133/196/256/308; KEY_4 与刷机共用 */
+        static const struct { const char *text; int center; } rows[] = {
+            { "电源", 46 }, { "上翻  KEY_1", 133 }, { "下翻  KEY_2", 196 },
+            { "确定  KEY_3", 256 }, { "退出/刷机  KEY_4", 308 },
+        };
+        for(size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+            int y = scaled(ui, rows[i].center) - arrow / 2;
             make_arrow(ui, ui->page, ARROW_RIGHT, w - arrow - scaled(ui, 4), y, arrow);
-            lv_obj_t *l = make_label(ui, ui->page, rows[i], ui->font_body, COL_TEXT);
+            lv_obj_t *l = make_label(ui, ui->page, rows[i].text, ui->font_body, COL_TEXT);
             lv_obj_update_layout(l);
             lv_obj_set_pos(l, w - scaled(ui, 32) - lv_obj_get_width(l), y - scaled(ui, 2));
         }
@@ -434,7 +438,7 @@ static void shot_path(const tutorial_ui_t *ui, const char *name, char *out, size
 
 /* 按页面出现顺序, 先渲染先用到的 */
 static const char *const SHOT_NAMES[SHOT_COUNT] = {
-    "playback", "mainmenu", "oplist", "applist", "settings", "usbselect", "sysinfo",
+    "playback", "mainmenu", "oplist", "dispimg", "applist", "settings", "usbselect", "sysinfo",
 };
 
 static int shot_index(const char *name)
@@ -582,11 +586,18 @@ static void build_page(tutorial_ui_t *ui)
             "· KEY_4  返回播放画面");
         break;
     case PAGE_OPLIST:
-        build_shot_page(ui, "干员列表 / 扩列图", "oplist",
-            "播放画面按 KEY_1 / KEY_2 直接进入。\n"
+        build_shot_page(ui, "干员列表", "oplist",
+            "播放画面按 KEY_1 / KEY_2 直接进入\n"
             "· 选中干员即切换当前播放的立绘\n"
-            "· 扩列图: 在播放画面按 KEY_3 进入, KEY_1 / KEY_2 翻页\n"
-            "· 素材与扩列图推荐用 Web 管理器或手机 APP 管理");
+            "· #78c8ff 按住 KEY_3# 进入重新排序: KEY_1/2 移动, KEY_4 保存\n"
+            "· 素材推荐用 Web 管理器或手机 APP 管理");
+        break;
+    case PAGE_DISPIMG:
+        build_shot_page(ui, "扩列图", "dispimg",
+            "播放画面按 KEY_3 进入, 展示 /dispimg 里的图片。\n"
+            "· KEY_1/2 翻页, KEY_3/4 返回\n"
+            "· 支持 JPG / PNG / BMP / GIF\n"
+            "· 图片推荐用 Web 管理器或手机 APP 管理");
         break;
     case PAGE_APPS:
         build_shot_page(ui, "应用 / 文件", "applist",
