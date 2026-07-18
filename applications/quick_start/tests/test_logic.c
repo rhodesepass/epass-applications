@@ -119,6 +119,15 @@ static void test_storage_parse(void)
     assert(strcmp(buf, "512 MB") == 0);
     storage_format_size(2ULL * 1000 * 1000 * 1000, buf, sizeof(buf));
     assert(strcmp(buf, "2.0 GB") == 0);
+
+    const char *dmesg =
+        "[    0.221945] spi-nand spi0.0: Winbond SPI NAND was found.\n"
+        "[    0.221978] spi-nand spi0.0: 128 MiB, block size: 128 KiB, "
+        "page size: 2048, OOB size: 64\n";
+    assert(storage_parse_nand_dmesg(dmesg, buf, sizeof(buf)));
+    assert(strcmp(buf, "Winbond/128MB") == 0);
+    assert(!storage_parse_nand_dmesg("no nand here", buf, sizeof(buf)));
+    assert(!storage_parse_nand_dmesg(NULL, buf, sizeof(buf)));
 }
 
 int main(void)

@@ -6,6 +6,9 @@
 #include <stdio.h>
 #include <unistd.h>
 
+/* 与 rootfs S01app 约定: 首次开机教程完成后 touch 此文件, 之后跳过自动启动 */
+#define QUICK_START_DONE "/etc/.quick_start_done"
+
 static volatile sig_atomic_t stopping;
 
 static void stop_signal(int signal_number)
@@ -19,6 +22,9 @@ int main(void)
     tutorial_platform_t platform;
     tutorial_ui_t *ui = NULL;
     int result = 1;
+
+    /* 每次手动/自动进入教程都清掉“已跑过”标记, 便于下次开机再次自动引导 */
+    unlink(QUICK_START_DONE);
 
     signal(SIGINT, stop_signal);
     signal(SIGTERM, stop_signal);

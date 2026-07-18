@@ -15,10 +15,14 @@ bool storage_parse_block_sectors(const char *text, unsigned long long *bytes_out
 /* 字节 → 人类可读, 按 SD 卡标称的 10 进制单位 ("14.8 GB" / "512 MB") */
 void storage_format_size(unsigned long long bytes, char *buf, size_t size);
 
+/* dmesg 文本 → "Winbond/128MB" (厂商来自 "X SPI NAND was found", 容量来自 "N MiB,") */
+bool storage_parse_nand_dmesg(const char *dmesg, char *out, size_t out_size);
+
 /* ---- 带 IO 的封装 ---- */
 
 typedef struct {
     bool nand_present;              /* mtd3 存在 (NAND 已探到并分区) */
+    char nand_name[40];             /* dmesg 提取的 "厂商/容量", 空则未解析到 */
     bool ubi_ok;                   /* 成功读到 UBI 统计 */
     int  ubi_bad;                  /* 已知坏块 (bad_peb_count) */
     int  ubi_reserved;             /* 还可容纳的坏块 (reserved_for_bad) */

@@ -9,7 +9,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/klog.h>
 #include <unistd.h>
+
+#ifndef SYSLOG_ACTION_READ_ALL
+#define SYSLOG_ACTION_READ_ALL 3
+#endif
 
 /* NAND 上承载 rootfs 的 UBI 分区 (device-tree/cmdline 里的 ubi.mtd=3) */
 #define UBI_MTD_INDEX 3
@@ -51,6 +56,65 @@ void storage_format_size(unsigned long long bytes, char *buf, size_t size)
     } else {
         snprintf(buf, size, "%llu MB", (bytes + 500000ULL) / 1000000ULL);
     }
+}
+
+bool storage_parse_nand_dmesg(const char *dmesg, char *out, size_t out_size)
+{
+    if(!dmesg || !out || out_size == 0) return false;
+    out[0] = '\0';
+
+    const char *found = strstr(dmesg, "SPI NAND was found");
+    if(!found) return false;
+
+    const char *vend_end = found;
+    while(vend_end > dmesg && (vend_end[-1] == ' ' || vend_end[-1] == '\t'))
+        vend_end--;
+    const char *vend_start = vend_end;
+    while(vend_start > dmesg && vend_start[-1] != ' ' && vend_start[-1] != '\t' &&
+          vend_start[-1] != ':' && vend_start[-1] != '\n')
+        vend_start--;
+    size_t vlen = (size_t)(vend_end - vend_start);
+    if(vlen == 0 || vlen >= 32) return false;
+
+    unsigned mib = 0;
+    bool got_size = false;
+    for(const char *p = dmesg; (p = strstr(p, " MiB,")) != NULL; p++) {
+        const char *q = p;
+        while(q > dmesg && q[-1] >= '0' && q[-1] <= '9') q--;
+        if(q < p && sscanf(q, "%u MiB,", &mib) == 1 && mib > 0) {
+            got_size = true;
+            break;
+        }
+    }
+    if(!got_size) return false;
+
+    char vendor[32];
+    memcpy(vendor, vend_start, vlen);
+    vendor[vlen] = '\0';
+    snprintf(out, out_size, "%s/%uMB", vendor, mib);
+    return true;
+}
+
+/* 读内核环缓; 失败时回退 popen(dmesg) */
+static bool read_dmesg(char *buf, size_t size)
+{
+    int n = klogctl(SYSLOG_ACTION_READ_ALL, buf, (int)size - 1);
+    if(n >= 0) {
+        buf[n] = '\0';
+        return true;
+    }
+
+    FILE *fp = popen("dmesg 2>/dev/null", "r");
+    if(!fp) return false;
+    size_t off = 0;
+    while(off + 1 < size) {
+        size_t r = fread(buf + off, 1, size - 1 - off, fp);
+        if(r == 0) break;
+        off += r;
+    }
+    pclose(fp);
+    buf[off] = '\0';
+    return off > 0;
 }
 
 static bool read_text_file(const char *path, char *buf, size_t size)
@@ -131,6 +195,12 @@ void storage_probe(storage_info_t *out)
     char mtd[1024];
     if(read_text_file("/proc/mtd", mtd, sizeof(mtd)))
         out->nand_present = storage_parse_mtd(mtd, UBI_MTD_INDEX, NULL);
+
+    {
+        char dmesg[65536];
+        if(read_dmesg(dmesg, sizeof(dmesg)))
+            storage_parse_nand_dmesg(dmesg, out->nand_name, sizeof(out->nand_name));
+    }
 
     if(out->nand_present) {
         int dev = find_attached_ubi(UBI_MTD_INDEX);

@@ -315,18 +315,11 @@ static void build_page_selftest(tutorial_ui_t *ui)
     lv_obj_set_pos(title, x, y);
     y += scaled(ui, 66);
 
-    /* 设备版本 (device-tree model, 可能较长, 独立成块) */
+    /* 设备版本 (与其它行一样横排) */
     char model[96];
     bool model_ok = sysinfo_read_model(model, sizeof(model));
     if(!model_ok) { strcpy(model, "读取失败   WARNING"); ui->warn_static = true; }
-    lv_obj_t *l = make_label(ui, ui->page, "设备版本", ui->font_small, COL_MUTED);
-    lv_obj_set_pos(l, x, y);
-    y += scaled(ui, 26);
-    l = make_label(ui, ui->page, model, ui->font_body, model_ok ? COL_TEXT : COL_WARN);
-    lv_obj_set_width(l, w - 2 * x);
-    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(l, x, y);
-    y += scaled(ui, 46);
+    y = selftest_row(ui, x, y, "设备版本", model, model_ok ? COL_TEXT : COL_WARN);
 
     /* 机种类型: 只认 360p / 720p 两档 */
     char text[64];
@@ -363,11 +356,21 @@ static void build_page_selftest(tutorial_ui_t *ui)
     storage_info_t st;
     storage_probe(&st);
 
-    l = make_label(ui, ui->page, "NAND", ui->font_small, COL_MUTED);
-    lv_obj_set_pos(l, x, y);
-    l = make_label(ui, ui->page, st.nand_present ? "存在" : "未检出", ui->font_body,
-                   st.nand_present ? COL_TEXT : COL_WARN);
-    lv_obj_set_pos(l, x + scaled(ui, 100), y - scaled(ui, 4));
+    {
+        const char *nand_val = "未检出";
+        lv_color_t nand_color = COL_WARN;
+        if(st.nand_name[0]) {
+            nand_val = st.nand_name;
+            nand_color = COL_TEXT;
+        } else if(st.nand_present) {
+            nand_val = "已检出";
+            nand_color = COL_TEXT;
+        }
+        lv_obj_t *l = make_label(ui, ui->page, "NAND", ui->font_small, COL_MUTED);
+        lv_obj_set_pos(l, x, y);
+        l = make_label(ui, ui->page, nand_val, ui->font_body, nand_color);
+        lv_obj_set_pos(l, x + scaled(ui, 100), y - scaled(ui, 4));
+    }
     if(st.nand_present) {
         char det[80];
         lv_color_t dc = COL_MUTED;
@@ -379,11 +382,17 @@ static void build_page_selftest(tutorial_ui_t *ui)
             strcpy(det, "UBI 卷信息读取失败");
             dc = COL_WARN;
         }
-        l = make_label(ui, ui->page, det, ui->font_small, dc);
+        lv_obj_t *l = make_label(ui, ui->page, det, ui->font_small, dc);
         lv_obj_set_width(l, w - 2 * x);
         lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
         lv_obj_set_pos(l, x, y + scaled(ui, 28));
-        y += scaled(ui, 52);
+        l = make_label(ui, ui->page,
+                       "NAND坏块数量依靠OOB内部标记判断，不准。仅供参考。",
+                       ui->font_small, COL_MUTED);
+        lv_obj_set_width(l, w - 2 * x);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+        lv_obj_set_pos(l, x, y + scaled(ui, 50));
+        y += scaled(ui, 100);
     } else {
         y += scaled(ui, 42);
     }
@@ -396,7 +405,7 @@ static void build_page_selftest(tutorial_ui_t *ui)
     }
 
     /* 视频解码器 (异步) */
-    l = make_label(ui, ui->page, "视频解码器", ui->font_small, COL_MUTED);
+    lv_obj_t *l = make_label(ui, ui->page, "视频解码器", ui->font_small, COL_MUTED);
     lv_obj_set_pos(l, x, y);
     ui->ve_value = make_label(ui, ui->page, "检测中…", ui->font_body, COL_TEXT);
     lv_obj_set_pos(ui->ve_value, x + scaled(ui, 100), y - scaled(ui, 4));
