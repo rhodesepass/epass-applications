@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "app_ver": 1,
   "name": "电子书阅读器",
   "uuid": "82b8eb41-b7be-44a8-8053-b2620c0be61d",
   "description": "支持 UTF-8 与 GBK 编码 TXT 的四键电子书阅读器。",

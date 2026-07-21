@@ -3,10 +3,7 @@
 // 移植自 drm_app_neo 的 driver/vdec/player 代码经 #include "config.h" 取配置；
 // 本文件只保留播放器用得到的子集，数值口径与上游一致（预算注释见上游 config.h）。
 
-// ========== DRM Warpper Layer ==========
-#define DRM_WARPPER_LAYER_UI 2
-#define DRM_WARPPER_LAYER_OVERLAY 1
-#define DRM_WARPPER_LAYER_VIDEO 0
+// ========== Display Layer ==========
 
 // ========== 解码 buffer 预算（与 drm_app_neo 相同）==========
 #define VDEC_OUTPUT_BUF_SIZE (512 * 1024)

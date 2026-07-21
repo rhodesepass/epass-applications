@@ -2,9 +2,6 @@ set(APPLICATION_NAME video_player)
 
 add_executable(${APPLICATION_NAME}
     src/main.c
-    src/driver/drm_warpper.c
-    src/utils/spsc_queue.c
-    src/utils/log.c
     src/utils/misc.c
     src/vdec/bitreader.c
     src/vdec/nalu.c
@@ -30,6 +27,7 @@ target_compile_options(${APPLICATION_NAME} PRIVATE
 )
 
 target_link_libraries(${APPLICATION_NAME} PRIVATE
+    hal_display
     epass_input
     lvgl
     epass_fonts

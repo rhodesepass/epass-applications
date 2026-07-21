@@ -23,7 +23,7 @@ static void flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *pixe
     tutorial_platform_t *platform = lv_display_get_user_data(display);
     if(lv_display_flush_is_last(display)) {
         int idx = (pixels == platform->buffers[1].vaddr) ? 1 : 0;
-        drm_warpper_mount_layer(&platform->drm, DRM_WARPPER_LAYER_UI, 0, 0, &platform->buffers[idx]);
+        hal_display_mount_layer(&platform->drm, HAL_DISPLAY_LAYER_UI, 0, 0, &platform->buffers[idx]);
     }
     lv_display_flush_ready(display);
 }
@@ -32,14 +32,13 @@ bool tutorial_platform_init(tutorial_platform_t *platform)
 {
     memset(platform, 0, sizeof(*platform));
     platform->input_fd_count = 0;
-    if(drm_warpper_init(&platform->drm) < 0) return false;
-    platform->width = platform->drm.conn->modes[0].hdisplay;
-    platform->height = platform->drm.conn->modes[0].vdisplay;
-    if(drm_warpper_init_layer(&platform->drm, DRM_WARPPER_LAYER_UI, platform->width, platform->height,
-                              DRM_WARPPER_LAYER_MODE_RGB565) < 0 ||
-       drm_warpper_allocate_buffer(&platform->drm, DRM_WARPPER_LAYER_UI, &platform->buffers[0]) < 0 ||
-       drm_warpper_allocate_buffer(&platform->drm, DRM_WARPPER_LAYER_UI, &platform->buffers[1]) < 0 ||
-       drm_warpper_mount_layer(&platform->drm, DRM_WARPPER_LAYER_UI, 0, 0, &platform->buffers[0]) < 0) {
+    if(hal_display_init(&platform->drm) < 0) return false;
+    hal_display_display_size(&platform->drm, &platform->width, &platform->height);
+    if(hal_display_init_layer(&platform->drm, HAL_DISPLAY_LAYER_UI, platform->width, platform->height,
+                              HAL_DISPLAY_LAYER_MODE_RGB565) < 0 ||
+       hal_display_allocate_buffer(&platform->drm, HAL_DISPLAY_LAYER_UI, &platform->buffers[0]) < 0 ||
+       hal_display_allocate_buffer(&platform->drm, HAL_DISPLAY_LAYER_UI, &platform->buffers[1]) < 0 ||
+       hal_display_mount_layer(&platform->drm, HAL_DISPLAY_LAYER_UI, 0, 0, &platform->buffers[0]) < 0) {
         goto fail;
     }
     // DIRECT 模式让 LVGL 直接画进两块显存,零拷贝翻页需要行距与画面宽度紧密对齐
@@ -57,9 +56,13 @@ bool tutorial_platform_init(tutorial_platform_t *platform)
                            LV_DISPLAY_RENDER_MODE_DIRECT);
     platform->input_fd_count = epass_input_open_nav(platform->input_fds, EPASS_INPUT_MAX_FDS);
     if(platform->input_fd_count <= 0) goto fail;
-    /* 遮罩层拿不到就算了, 只是没有过渡动画, 不该让整个应用起不来 */
-    if(drm_warpper_layer_can_fade(&platform->drm, DRM_WARPPER_LAYER_OVERLAY) &&
-       drm_warpper_allocate_buffer(&platform->drm, DRM_WARPPER_LAYER_OVERLAY,
+    /* 遮罩层拿不到就算了, 只是没有过渡动画, 不该让整个应用起不来。
+     * allocate 取的是 init_layer 登记的宽高, 不 init 会拿 0×0 造 buffer */
+    if(hal_display_layer_can_fade(&platform->drm, HAL_DISPLAY_LAYER_TOP) &&
+       hal_display_init_layer(&platform->drm, HAL_DISPLAY_LAYER_TOP,
+                              platform->width, platform->height,
+                              HAL_DISPLAY_LAYER_MODE_RGB565) == 0 &&
+       hal_display_allocate_buffer(&platform->drm, HAL_DISPLAY_LAYER_TOP,
                                    &platform->overlay_buf) == 0)
         platform->has_overlay = true;
     return true;
@@ -98,7 +101,7 @@ void tutorial_platform_overlay_fade(tutorial_platform_t *platform, int from, int
 {
     if(!platform->has_overlay) return;
     /* 起手先按 from 挂上 (alpha 与 fb 同一次 commit), 免得以上一轮的 alpha 闪一帧 */
-    if(drm_warpper_mount_layer_alpha(&platform->drm, DRM_WARPPER_LAYER_OVERLAY, 0, 0,
+    if(hal_display_mount_layer_alpha(&platform->drm, HAL_DISPLAY_LAYER_TOP, 0, 0,
                                      &platform->overlay_buf, (uint8_t)from) < 0)
         return;
     const int step_ms = 16; /* 约 60Hz, 再密屏幕也跟不上 */
@@ -106,11 +109,11 @@ void tutorial_platform_overlay_fade(tutorial_platform_t *platform, int from, int
     if(steps < 1) steps = 1;
     for(int i = 1; i <= steps; i++) {
         nanosleep(&(struct timespec){ 0, step_ms * 1000000L }, NULL);
-        drm_warpper_set_layer_alpha(&platform->drm, DRM_WARPPER_LAYER_OVERLAY,
+        hal_display_set_layer_alpha(&platform->drm, HAL_DISPLAY_LAYER_TOP,
                                     (uint8_t)(from + (to - from) * i / steps));
     }
     /* 全透明就别继续占着 DE 的合成带宽 */
-    if(to == 0) drm_warpper_unmount_layer(&platform->drm, DRM_WARPPER_LAYER_OVERLAY);
+    if(to == 0) hal_display_disable_layer_sync(&platform->drm, HAL_DISPLAY_LAYER_TOP);
 }
 
 void tutorial_platform_set_brightness(int level)
@@ -124,10 +127,10 @@ void tutorial_platform_destroy(tutorial_platform_t *platform)
     epass_input_close(platform->input_fds, platform->input_fd_count);
     if(platform->display) lv_display_delete(platform->display);
     if(platform->has_overlay)
-        drm_warpper_free_buffer(&platform->drm, &platform->overlay_buf);
-    drm_warpper_free_buffer(&platform->drm, &platform->buffers[0]);
-    drm_warpper_free_buffer(&platform->drm, &platform->buffers[1]);
-    drm_warpper_destroy(&platform->drm);
+        hal_display_free_buffer(&platform->drm, HAL_DISPLAY_LAYER_TOP, &platform->overlay_buf);
+    hal_display_free_buffer(&platform->drm, HAL_DISPLAY_LAYER_UI, &platform->buffers[0]);
+    hal_display_free_buffer(&platform->drm, HAL_DISPLAY_LAYER_UI, &platform->buffers[1]);
+    hal_display_destroy(&platform->drm);
     memset(platform, 0, sizeof(*platform));
     platform->input_fd_count = 0;
 }

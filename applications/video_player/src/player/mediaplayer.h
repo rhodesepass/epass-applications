@@ -1,6 +1,6 @@
 /*
  * Fork 自 drm_app_neo 的 mediaplayer（cedrus V4L2 request API 硬解 →
- * dmabuf FB → drm_warpper atomic 翻页），为播放器加了：
+ * dmabuf FB → hal_display atomic 翻页），为播放器加了：
  *  - 暂停（pacer 层，唯一定速点也是唯一暂停点，pacer 恒开）
  *  - 关键帧级 seek（异步请求，解码线程在循环顶部执行）
  *  - cedrus-rotate 硬件旋转（0/90/180/270，运行时可切）
@@ -16,7 +16,7 @@
 #include <pthread.h>
 #include <stdatomic.h>
 
-#include "driver/drm_warpper.h"
+#include "hal_display.h"
 
 #define MEDIAPLAYER_DECODER_ERROR  (1 << 1)
 #define MEDIAPLAYER_DECODER_EXIT   (1 << 4)
@@ -67,7 +67,7 @@ typedef struct {
     atomic_int           pacer_hold;
     atomic_int           pacer_parked;
 
-    drm_warpper_t       *drm_warpper;
+    hal_display_t       *hal_display;
 } mediaplayer_t;
 
 typedef enum {
@@ -77,7 +77,7 @@ typedef enum {
     MP_STATUS_ERROR,
 } mp_status_t;
 
-int mediaplayer_init(mediaplayer_t *mp, drm_warpper_t *drm_warpper,
+int mediaplayer_init(mediaplayer_t *mp, hal_display_t *hal_display,
                      int screen_width, int screen_height);
 int mediaplayer_destroy(mediaplayer_t *mp);
 

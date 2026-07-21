@@ -21,7 +21,7 @@ static void flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *pixe
     ebook_platform_t *platform = lv_display_get_user_data(display);
     if(lv_display_flush_is_last(display)) {
         int idx = (pixels == platform->buffers[1].vaddr) ? 1 : 0;
-        drm_warpper_mount_layer(&platform->drm, 2, 0, 0, &platform->buffers[idx]);
+        hal_display_mount_layer(&platform->drm, 2, 0, 0, &platform->buffers[idx]);
     }
     lv_display_flush_ready(display);
 }
@@ -30,14 +30,13 @@ bool ebook_platform_init(ebook_platform_t *platform)
 {
     memset(platform, 0, sizeof(*platform));
     platform->input_fd_count = 0;
-    if(drm_warpper_init(&platform->drm) < 0) return false;
-    platform->width = platform->drm.conn->modes[0].hdisplay;
-    platform->height = platform->drm.conn->modes[0].vdisplay;
-    if(drm_warpper_init_layer(&platform->drm, 2, platform->width, platform->height,
-                              DRM_WARPPER_LAYER_MODE_RGB565) < 0 ||
-       drm_warpper_allocate_buffer(&platform->drm, 2, &platform->buffers[0]) < 0 ||
-       drm_warpper_allocate_buffer(&platform->drm, 2, &platform->buffers[1]) < 0 ||
-       drm_warpper_mount_layer(&platform->drm, 2, 0, 0, &platform->buffers[0]) < 0) {
+    if(hal_display_init(&platform->drm) < 0) return false;
+    hal_display_display_size(&platform->drm, &platform->width, &platform->height);
+    if(hal_display_init_layer(&platform->drm, 2, platform->width, platform->height,
+                              HAL_DISPLAY_LAYER_MODE_RGB565) < 0 ||
+       hal_display_allocate_buffer(&platform->drm, 2, &platform->buffers[0]) < 0 ||
+       hal_display_allocate_buffer(&platform->drm, 2, &platform->buffers[1]) < 0 ||
+       hal_display_mount_layer(&platform->drm, 2, 0, 0, &platform->buffers[0]) < 0) {
         goto fail;
     }
     // DIRECT 模式让 LVGL 直接画进两块显存,零拷贝翻页需要行距与画面宽度紧密对齐
@@ -89,9 +88,9 @@ void ebook_platform_destroy(ebook_platform_t *platform)
 {
     epass_input_close(platform->input_fds, platform->input_fd_count);
     if(platform->display) lv_display_delete(platform->display);
-    drm_warpper_free_buffer(&platform->drm, &platform->buffers[0]);
-    drm_warpper_free_buffer(&platform->drm, &platform->buffers[1]);
-    drm_warpper_destroy(&platform->drm);
+    hal_display_free_buffer(&platform->drm, 2, &platform->buffers[0]);
+    hal_display_free_buffer(&platform->drm, 2, &platform->buffers[1]);
+    hal_display_destroy(&platform->drm);
     memset(platform, 0, sizeof(*platform));
     platform->input_fd_count = 0;
 }

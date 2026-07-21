@@ -1,6 +1,6 @@
 #pragma once
 
-#include "driver/drm_warpper.h"
+#include "hal_display.h"
 #include "epass_input.h"
 #include <lvgl.h>
 #include <stdbool.h>
@@ -21,11 +21,11 @@ typedef struct {
 } vp_key_event_t;
 
 typedef struct {
-    drm_warpper_t drm;
+    hal_display_t drm;
     /* 播放条：屏幕底部一条独立 RGB565 小 plane(LVGL 只画这一条)。
      * RGB565 无 alpha，做成全屏会整屏盖死视频层，故取小条 + 显隐靠
      * mount/unmount */
-    buffer_object_t bar_buffers[2];
+    hal_buffer_t bar_buffers[2];
     lv_display_t *display;
     int last_flushed;
     bool bar_visible;

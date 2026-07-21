@@ -16,7 +16,6 @@ target_compile_options(system_maintenance_core PRIVATE
 
 add_executable(${APPLICATION_NAME}
     src/main.c
-    src/port/drm_warpper.c
     src/port/platform.c
     src/ui/ui.c
 )
@@ -35,6 +34,7 @@ target_compile_options(${APPLICATION_NAME} PRIVATE
     ${FREETYPE_CFLAGS_OTHER}
 )
 target_link_libraries(${APPLICATION_NAME} PRIVATE
+    hal_display
     system_maintenance_core
     epass_input
     lvgl

@@ -353,6 +353,9 @@ static void render_font(ebook_ui_t *ui)
 static void render_exit_confirm(ebook_ui_t *ui)
 {
     lv_obj_t *box;
+    lv_obj_t *header;
+    lv_obj_t *footer;
+    int row_h = scaled(ui, 52);
     close_msgbox(ui);
     box = lv_msgbox_create(NULL);
     ui->msgbox = box;
@@ -362,6 +365,11 @@ static void render_exit_confirm(ebook_ui_t *ui)
     lv_msgbox_add_text(box, "确定退出阅读？当前进度会自动保存。");
     lv_msgbox_add_footer_button(box, "退出 (KEY3)");
     lv_msgbox_add_footer_button(box, "返回 (KEY4)");
+    /* LVGL 默认 header/footer 高度为 DPI/3（约 43px），自定义大字号会裁切文字 */
+    header = lv_msgbox_get_header(box);
+    footer = lv_msgbox_get_footer(box);
+    if(header != NULL) lv_obj_set_height(header, row_h);
+    if(footer != NULL) lv_obj_set_height(footer, row_h);
     lv_label_set_text(ui->status, "KEY3 确认退出  KEY4 返回阅读");
     ui->view = VIEW_EXIT_CONFIRM;
 }

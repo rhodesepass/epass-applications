@@ -1,6 +1,6 @@
 #pragma once
 
-#include "drm_warpper.h"
+#include "hal_display.h"
 #include "epass_input.h"
 #include <lvgl.h>
 #include <stdbool.h>
@@ -14,15 +14,15 @@ typedef enum {
 } tutorial_key_t;
 
 typedef struct {
-    drm_warpper_t drm;
-    buffer_object_t buffers[2];
+    hal_display_t drm;
+    hal_buffer_t buffers[2];
     lv_display_t *display;
     int input_fds[EPASS_INPUT_MAX_FDS];
     int input_fd_count;
     int width, height;
     /* 翻页过渡用的遮罩层。拿不到第二个 plane 或它不支持 alpha 时为 false,
      * 此时所有 overlay 调用退化成空操作 (host 预览工具也走这条路) */
-    buffer_object_t overlay_buf;
+    hal_buffer_t overlay_buf;
     bool has_overlay;
 } tutorial_platform_t;
 

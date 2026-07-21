@@ -1,6 +1,6 @@
 #pragma once
 
-#include "drm_warpper.h"
+#include "hal_display.h"
 #include "epass_input.h"
 #include <lvgl.h>
 #include <stdbool.h>
@@ -14,8 +14,8 @@ typedef enum {
 } iv_key_t;
 
 typedef struct {
-    drm_warpper_t drm;
-    buffer_object_t buffers[2];
+    hal_display_t drm;
+    hal_buffer_t buffers[2];
     lv_display_t *display;
     int input_fds[EPASS_INPUT_MAX_FDS];
     int input_fd_count;

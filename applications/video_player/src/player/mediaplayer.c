@@ -25,7 +25,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
-#include "driver/drm_warpper.h"
+#include "hal_display.h"
 #include "utils/log.h"
 #include "config.h"
 #include "utils/misc.h"
@@ -208,7 +208,7 @@ static inline int mp_control_pending(mediaplayer_t *mp)
 }
 
 /* item 离开显示路径(回流或中途撤回)时的统一清账。只在解码线程调用。 */
-static void mp_release_item(mediaplayer_t *mp, drm_warpper_queue_item_t *item)
+static void mp_release_item(mediaplayer_t *mp, hal_display_queue_item_t *item)
 {
     mp_dev_priv_t *p = (mp_dev_priv_t *)mp->priv;
     uintptr_t ud = (uintptr_t)item->userdata;
@@ -234,10 +234,10 @@ static void mp_release_item(mediaplayer_t *mp, drm_warpper_queue_item_t *item)
 
 static void mp_reclaim_free_items(mediaplayer_t *mp)
 {
-    drm_warpper_queue_item_t *item;
+    hal_display_queue_item_t *item;
 
-    while (drm_warpper_try_dequeue_free_item(mp->drm_warpper,
-                                             DRM_WARPPER_LAYER_VIDEO,
+    while (hal_display_try_dequeue_free_item(mp->hal_display,
+                                             HAL_DISPLAY_LAYER_VIDEO,
                                              &item) == 0)
         mp_release_item(mp, item);
 }
@@ -262,19 +262,19 @@ static void mp_pace_wait(mediaplayer_t *mp, long long *next)
  * 直通帧(SLOT)在此设 on_screen；旋转帧的解码 slot 已在旋转完成时放手，
  * 这里押的是 rot buffer。
  */
-static drm_warpper_queue_item_t *mp_make_frame_item(mediaplayer_t *mp,
+static hal_display_queue_item_t *mp_make_frame_item(mediaplayer_t *mp,
                                                     uint32_t fb_id,
                                                     int kind, int idx)
 {
     mp_dev_priv_t *p = (mp_dev_priv_t *)mp->priv;
-    drm_warpper_queue_item_t *item = malloc(sizeof(*item));
+    hal_display_queue_item_t *item = malloc(sizeof(*item));
 
     if (!item) {
         log_error("malloc err");
         return NULL;
     }
     memset(item, 0, sizeof(*item));
-    item->type = DRM_WARPPER_ITEM_FLIP_FB;
+    item->type = HAL_DISPLAY_ITEM_FLIP_FB;
     item->fb_id = fb_id;
     item->userdata = mp_userdata(mp, kind, idx);
     item->on_heap = false;
@@ -313,7 +313,7 @@ static void mp_apply_geometry(mediaplayer_t *mp)
         dst_w = (int)((int64_t)cw * mp->screen_height / ch);
     }
 
-    drm_warpper_set_layer_geometry(mp->drm_warpper, DRM_WARPPER_LAYER_VIDEO,
+    hal_display_set_layer_geometry(mp->hal_display, HAL_DISPLAY_LAYER_VIDEO,
                                    (mp->screen_width - dst_w) / 2,
                                    (mp->screen_height - dst_h) / 2,
                                    cw, ch, dst_w, dst_h);
@@ -330,7 +330,7 @@ static void mp_rot_teardown(mediaplayer_t *mp)
 
     for (i = 0; i < ROT_MAX_CAP_BUFS; i++) {
         if (p->rot_fb_ids[i]) {
-            drm_warpper_rm_fb(mp->drm_warpper, p->rot_fb_ids[i], p->rot_gems[i]);
+            hal_display_rm_fb(mp->hal_display, p->rot_fb_ids[i], p->rot_gems[i]);
             p->rot_fb_ids[i] = 0;
             p->rot_gems[i] = 0;
         }
@@ -360,7 +360,7 @@ static int mp_rot_setup(mediaplayer_t *mp, int angle)
     p->rot_active = true;
 
     for (i = 0; i < p->rot.cap_count; i++) {
-        if (drm_warpper_import_dmabuf_fb(mp->drm_warpper,
+        if (hal_display_import_dmabuf_fb(mp->hal_display,
                                          p->rot.cap[i].dmabuf_fd,
                                          p->rot.cap_width,
                                          p->rot.cap_height,
@@ -434,7 +434,7 @@ static void mp_pacer_hold_end(mediaplayer_t *mp)
 static void mp_drain_smooth_q(mediaplayer_t *mp)
 {
     mp_dev_priv_t *p = (mp_dev_priv_t *)mp->priv;
-    drm_warpper_queue_item_t *item;
+    hal_display_queue_item_t *item;
 
     while (spsc_bq_try_pop(&p->smooth_q, (void **)&item) == 0)
         mp_release_item(mp, item);
@@ -538,7 +538,7 @@ static void mp_do_rot_switch(mediaplayer_t *mp, int want)
     mp_wait_offscreen(mp);
 
     /* plane 关掉后 buffer 不再被扫描，才能安全拆池/放 slot */
-    drm_warpper_disable_layer_sync(mp->drm_warpper, DRM_WARPPER_LAYER_VIDEO);
+    hal_display_disable_layer_sync(mp->hal_display, HAL_DISPLAY_LAYER_VIDEO);
 
     for (i = 0; i < VDEC_MAX_CAP_BUFS; i++) {
         if (p->hold_slot[i]) {
@@ -582,7 +582,7 @@ static void *mp_pacer_thread(void *param)
              mp->frame_duration_us, p->smooth_bufs);
 
     while (1) {
-        drm_warpper_queue_item_t *item = NULL;
+        hal_display_queue_item_t *item = NULL;
 
         if (atomic_load(&mp->pacer_hold)) {
             atomic_store(&mp->pacer_parked, 1);
@@ -633,8 +633,8 @@ static void *mp_pacer_thread(void *param)
                                                           : p->pts_slot[idx]);
         }
 
-        drm_warpper_enqueue_display_item(mp->drm_warpper,
-                                         DRM_WARPPER_LAYER_VIDEO, item);
+        hal_display_enqueue_display_item(mp->hal_display,
+                                         HAL_DISPLAY_LAYER_VIDEO, item);
         if (atomic_load(&mp->step_one))
             atomic_store(&mp->step_one, 0);
 
@@ -867,7 +867,7 @@ static void *mp_decode_thread(void *param)
             fb_id = p->fb_ids[out];
         }
 
-        drm_warpper_queue_item_t *item = mp_make_frame_item(mp, fb_id, kind, idx);
+        hal_display_queue_item_t *item = mp_make_frame_item(mp, fb_id, kind, idx);
         if (!item)
             goto decode_error;
 
@@ -928,7 +928,7 @@ static void mp_close_session(mediaplayer_t *mp)
     mp_rot_teardown(mp);
     for (i = 0; i < p->vdec.cap_count; i++) {
         if (p->fb_ids[i]) {
-            drm_warpper_rm_fb(mp->drm_warpper, p->fb_ids[i], p->gem_handles[i]);
+            hal_display_rm_fb(mp->hal_display, p->fb_ids[i], p->gem_handles[i]);
             p->fb_ids[i] = 0;
             p->gem_handles[i] = 0;
         }
@@ -942,7 +942,7 @@ static void mp_close_session(mediaplayer_t *mp)
     mp->session_open = false;
 }
 
-int mediaplayer_init(mediaplayer_t *mp, drm_warpper_t *drm_warpper,
+int mediaplayer_init(mediaplayer_t *mp, hal_display_t *hal_display,
                      int screen_width, int screen_height)
 {
     memset(mp, 0, sizeof(*mp));
@@ -954,7 +954,7 @@ int mediaplayer_init(mediaplayer_t *mp, drm_warpper_t *drm_warpper,
     }
     pthread_rwlock_init(&mp->thread.rwlock, NULL);
     atomic_store(&mp->running, 0);
-    mp->drm_warpper = drm_warpper;
+    mp->hal_display = hal_display;
     mp->screen_width = screen_width;
     mp->screen_height = screen_height;
 
@@ -1087,7 +1087,7 @@ static int mp_prepare_and_spawn(mediaplayer_t *mp)
     p->vdec.slow_threshold_us = mp_slow_threshold_us(mp);
 
     for (i = 0; i < p->vdec.cap_count; i++) {
-        if (drm_warpper_import_dmabuf_fb(mp->drm_warpper,
+        if (hal_display_import_dmabuf_fb(mp->hal_display,
                                          p->vdec.cap[i].dmabuf_fd,
                                          p->vdec.cap_width,
                                          p->vdec.cap_height,
@@ -1224,7 +1224,7 @@ int mediaplayer_stop(mediaplayer_t *mp)
         log_warn("stop: %d frame items still in flight", mp->items_in_flight);
 
     // 关掉 video plane(最底层，露出 DEBE 黑背景)，此后 RmFB 碰不到在屏 fb
-    drm_warpper_disable_layer_sync(mp->drm_warpper, DRM_WARPPER_LAYER_VIDEO);
+    hal_display_disable_layer_sync(mp->hal_display, HAL_DISPLAY_LAYER_VIDEO);
 
     mp_close_session(mp);
 

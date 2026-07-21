@@ -12,11 +12,18 @@ extern "C" {
 #define GAME_LOGICAL_WIDTH 360
 #define GAME_LOGICAL_HEIGHT 640
 
+/* ARGB8888 stays value 0 so a zero-initialized framebuffer defaults to it. */
+typedef enum {
+    GAME_PIXEL_FORMAT_ARGB8888 = 0,
+    GAME_PIXEL_FORMAT_RGB565
+} game_pixel_format_t;
+
 typedef struct {
     uint32_t *pixels;
     int width;
     int height;
     int pitch;
+    game_pixel_format_t format;
 } game_framebuffer_t;
 
 typedef enum {
@@ -31,8 +38,12 @@ typedef struct {
     void *impl;
 } game_platform_t;
 
-/* Opens DRM/input, selects the connected display mode and starts layer 1. */
+/* Opens DRM/input, selects the connected display mode and starts layer 1.
+   game_platform_init defaults to RGB565 (half the redraw bandwidth); use
+   game_platform_init_ex to request ARGB8888 for direct 32-bit pixel access. */
 bool game_platform_init(game_platform_t *platform);
+bool game_platform_init_ex(game_platform_t *platform,
+                           game_pixel_format_t format);
 /* Blocks until a back buffer is safe for CPU drawing. */
 bool game_platform_acquire_frame(game_platform_t *platform,
                                  game_framebuffer_t *framebuffer);

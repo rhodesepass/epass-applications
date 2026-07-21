@@ -4,7 +4,7 @@
  *
  * 输入输出都是 ST12（32x32 tiled NV12，即 cedrus 解码节点的原生输出）。
  * OUTPUT 端零拷贝吃解码 CAPTURE 的 dmabuf；CAPTURE 端 MMAP 分配并
- * EXPBUF 导出，直接喂 drm_warpper_import_dmabuf_fb 上视频层。
+ * EXPBUF 导出，直接喂 hal_display_import_dmabuf_fb 上视频层。
  *
  * 会话 = 一组 (角度, 尺寸, buffer 池)；切角度必须 stop 后重新 start。
  * 同步单帧：一次只有一对 buffer 在硬件里，与解码共用 VE 由内核排队。

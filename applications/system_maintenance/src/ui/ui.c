@@ -119,6 +119,16 @@ static void clear_body(maintenance_ui_t *ui)
     memset(ui->list_switches, 0, sizeof(ui->list_switches));
 }
 
+/* LVGL 默认 header/footer 高度为 DPI/3（约 43px），自定义大字号会裁切文字 */
+static void fit_msgbox_chrome(maintenance_ui_t *ui, lv_obj_t *box)
+{
+    int row_h = scaled(ui, 52);
+    lv_obj_t *header = lv_msgbox_get_header(box);
+    lv_obj_t *footer = lv_msgbox_get_footer(box);
+    if (header != NULL) lv_obj_set_height(header, row_h);
+    if (footer != NULL) lv_obj_set_height(footer, row_h);
+}
+
 static lv_obj_t *open_msgbox(maintenance_ui_t *ui, const char *title,
                              const char *text, const char *ok_label,
                              const char *cancel_label)
@@ -133,6 +143,7 @@ static lv_obj_t *open_msgbox(maintenance_ui_t *ui, const char *title,
     lv_msgbox_add_text(box, text);
     if (ok_label != NULL) lv_msgbox_add_footer_button(box, ok_label);
     if (cancel_label != NULL) lv_msgbox_add_footer_button(box, cancel_label);
+    fit_msgbox_chrome(ui, box);
     return box;
 }
 

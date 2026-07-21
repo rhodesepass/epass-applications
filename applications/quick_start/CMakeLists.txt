@@ -15,7 +15,6 @@ target_link_libraries(quick_start_core PUBLIC pthread)
 
 add_executable(${APPLICATION_NAME}
     src/main.c
-    src/port/drm_warpper.c
     src/port/platform.c
     src/ui/ui.c
 )
@@ -33,6 +32,7 @@ target_compile_options(${APPLICATION_NAME} PRIVATE
     ${FREETYPE_CFLAGS_OTHER}
 )
 target_link_libraries(${APPLICATION_NAME} PRIVATE
+    hal_display
     quick_start_core
     epass_input
     lvgl
@@ -53,7 +53,6 @@ if(QUICK_START_PREVIEW)
         tools/preview.c
         src/ui/ui.c
         src/port/platform.c
-        src/port/drm_warpper.c
     )
     target_compile_features(quick_start_preview PRIVATE c_std_11)
     target_include_directories(quick_start_preview PRIVATE
@@ -63,7 +62,7 @@ if(QUICK_START_PREVIEW)
         ${FREETYPE_INCLUDE_DIRS}
     )
     target_link_libraries(quick_start_preview PRIVATE
-        quick_start_core epass_input lvgl epass_fonts PNG::PNG
+        hal_display quick_start_core epass_input lvgl epass_fonts PNG::PNG
         ${LIBDRM_LIBRARIES} ${FREETYPE_LIBRARIES} pthread m)
 endif()
 

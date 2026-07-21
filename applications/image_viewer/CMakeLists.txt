@@ -2,7 +2,6 @@ set(APPLICATION_NAME image_viewer)
 
 add_executable(${APPLICATION_NAME}
     src/main.c
-    src/port/drm_warpper.c
     src/port/platform.c
     src/viewer/gallery.c
     src/ui/ui.c
@@ -24,6 +23,7 @@ target_compile_options(${APPLICATION_NAME} PRIVATE
 )
 
 target_link_libraries(${APPLICATION_NAME} PRIVATE
+    hal_display
     epass_input
     lvgl
     epass_fonts

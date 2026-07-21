@@ -49,6 +49,8 @@ static const overlay_registry_item_t ITEMS[] = {
     {"cardkb", OVERLAY_CATEGORY_EXTENSION, "CardKB 键盘",
      "启用 M5Stack CardKB 键盘支持，需要 I2C0。", -1, -1,
      REQ_I2C0, 1U, OVERLAY_DEPENDENCY_ALL, NULL, 0U},
+    ITEM("cvbs", OVERLAY_CATEGORY_EXTENSION, "CVBS 输出",
+         "启动 F1C 自带的 CVBS out。", -1, -1),
     {"lsm6ds3_pre0.4", OVERLAY_CATEGORY_EXTENSION, "板载 LSM6DS3",
      "启用 0.4 及以前硬件的板载 IMU，需要 I2C0。", -1, 1,
      REQ_I2C0, 1U, OVERLAY_DEPENDENCY_ALL, NULL, 0U},

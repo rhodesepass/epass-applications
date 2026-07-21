@@ -68,7 +68,9 @@ int main(void)
     sigaction(SIGTERM, &action, NULL);
 
     if(!niccc_init("scene1.bin")) return 1;
-    if(!game_platform_init(&platform)) goto cleanup_scene;
+    /* niccc writes 32-bit pixels straight into the framebuffer. */
+    if(!game_platform_init_ex(&platform, GAME_PIXEL_FORMAT_ARGB8888))
+        goto cleanup_scene;
     start_ms = game_monotonic_ms();
 
     while(running) {

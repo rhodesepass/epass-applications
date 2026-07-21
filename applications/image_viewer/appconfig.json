@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "app_ver": 1,
   "name": "图片查看器",
   "uuid": "10b1ab0d-1c30-4f95-99dc-f9ca9df7f6ad",
   "description": "支持 JPG/PNG/BMP/GIF 的四键图片查看器，可在同目录内前后翻页。",

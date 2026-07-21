@@ -26,7 +26,7 @@ static void flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *pixe
         /* 同步 mount 与显示线程的每 vsync commit 由 commit_mutex 串行，
          * UI 条帧率低，不走 display_queue 免记账 */
         if(platform->bar_visible)
-            drm_warpper_mount_layer(&platform->drm, DRM_WARPPER_LAYER_UI,
+            hal_display_mount_layer(&platform->drm, HAL_DISPLAY_LAYER_UI,
                                     0, platform->bar_y,
                                     &platform->bar_buffers[idx]);
     }
@@ -36,7 +36,7 @@ static void flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *pixe
 bool vp_platform_init(vp_platform_t *platform)
 {
     memset(platform, 0, sizeof(*platform));
-    if(drm_warpper_init(&platform->drm) < 0) return false;
+    if(hal_display_init(&platform->drm) < 0) return false;
     platform->width = platform->drm.conn->modes[0].hdisplay;
     platform->height = platform->drm.conn->modes[0].vdisplay;
 
@@ -44,17 +44,20 @@ bool vp_platform_init(vp_platform_t *platform)
     platform->bar_height = VP_BAR_HEIGHT_REF * platform->width / VP_BAR_WIDTH_REF;
     platform->bar_y = platform->height - platform->bar_height;
 
-    /* 视频层的 display/free 队列在 init_layer 里创建，mediaplayer 依赖 */
-    if(drm_warpper_init_layer(&platform->drm, DRM_WARPPER_LAYER_VIDEO,
-                              platform->width, platform->height,
-                              DRM_WARPPER_LAYER_MODE_MB32_NV12) < 0)
+    /* 视频层的 display/free 队列在 init_layer 里创建，mediaplayer 依赖。
+     * free 队列深度须 ≥ 全部在飞帧：capture 上限 + 平滑 ring + 跨会话残留 curr。
+     * 用 _ex 显式传，别吃 hal 默认值——capture 预算调大时这里跟着 config.h 走。 */
+    if(hal_display_init_layer_ex(&platform->drm, HAL_DISPLAY_LAYER_VIDEO,
+                                 platform->width, platform->height,
+                                 HAL_DISPLAY_LAYER_MODE_MB32_NV12,
+                                 VDEC_CAPTURE_BUF_MAX_SMALL + MP_SMOOTH_BUFS_MAX + 4) < 0)
         goto fail;
-    if(drm_warpper_init_layer(&platform->drm, DRM_WARPPER_LAYER_UI,
+    if(hal_display_init_layer(&platform->drm, HAL_DISPLAY_LAYER_UI,
                               platform->bar_width, platform->bar_height,
-                              DRM_WARPPER_LAYER_MODE_RGB565) < 0 ||
-       drm_warpper_allocate_buffer(&platform->drm, DRM_WARPPER_LAYER_UI,
+                              HAL_DISPLAY_LAYER_MODE_RGB565) < 0 ||
+       hal_display_allocate_buffer(&platform->drm, HAL_DISPLAY_LAYER_UI,
                                    &platform->bar_buffers[0]) < 0 ||
-       drm_warpper_allocate_buffer(&platform->drm, DRM_WARPPER_LAYER_UI,
+       hal_display_allocate_buffer(&platform->drm, HAL_DISPLAY_LAYER_UI,
                                    &platform->bar_buffers[1]) < 0)
         goto fail;
     // DIRECT 模式让 LVGL 直接画进两块显存,零拷贝翻页需要行距与画面宽度紧密对齐
@@ -110,11 +113,11 @@ void vp_platform_show_bar(vp_platform_t *platform, bool show)
     if(platform->bar_visible == show) return;
     platform->bar_visible = show;
     if(show) {
-        drm_warpper_mount_layer(&platform->drm, DRM_WARPPER_LAYER_UI,
+        hal_display_mount_layer(&platform->drm, HAL_DISPLAY_LAYER_UI,
                                 0, platform->bar_y,
                                 &platform->bar_buffers[platform->last_flushed]);
     } else {
-        drm_warpper_disable_layer_sync(&platform->drm, DRM_WARPPER_LAYER_UI);
+        hal_display_disable_layer_sync(&platform->drm, HAL_DISPLAY_LAYER_UI);
     }
 }
 
@@ -123,11 +126,11 @@ void vp_platform_destroy(vp_platform_t *platform)
     epass_input_close(platform->input_fds, platform->input_fd_count);
     if(platform->display) lv_display_delete(platform->display);
     if(platform->bar_buffers[0].vaddr)
-        drm_warpper_free_buffer(&platform->drm, DRM_WARPPER_LAYER_UI,
+        hal_display_free_buffer(&platform->drm, HAL_DISPLAY_LAYER_UI,
                                 &platform->bar_buffers[0]);
     if(platform->bar_buffers[1].vaddr)
-        drm_warpper_free_buffer(&platform->drm, DRM_WARPPER_LAYER_UI,
+        hal_display_free_buffer(&platform->drm, HAL_DISPLAY_LAYER_UI,
                                 &platform->bar_buffers[1]);
-    drm_warpper_destroy(&platform->drm);
+    hal_display_destroy(&platform->drm);
     memset(platform, 0, sizeof(*platform));
 }

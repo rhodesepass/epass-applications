@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "app_ver": 1,
   "name": "快速上手",
   "uuid": "91ac0edf-448a-408d-9d2d-3b0b3bafb0cb",
   "description": "新手教程：按键布局、设备自检与主程序各屏用法。",

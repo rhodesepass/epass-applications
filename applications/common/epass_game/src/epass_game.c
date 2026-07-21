@@ -1,5 +1,5 @@
 #include "../include/epass_game.h"
-#include "drm_warpper.h"
+#include "hal_display.h"
 #include "epass_input.h"
 #include "log.h"
 
@@ -11,16 +11,17 @@
 #include <time.h>
 #include <unistd.h>
 
-#define GAME_LAYER DRM_WARPPER_LAYER_OVERLAY
+#define GAME_LAYER HAL_DISPLAY_LAYER_OVERLAY
 
 typedef struct {
-    drm_warpper_t drm;
-    buffer_object_t buffers[2];
-    drm_warpper_queue_item_t items[2];
-    drm_warpper_queue_item_t *acquired;
+    hal_display_t drm;
+    hal_buffer_t buffers[2];
+    hal_display_queue_item_t items[2];
+    hal_display_queue_item_t *acquired;
     int input_fds[EPASS_INPUT_MAX_FDS];
     int input_fd_count;
     int width, height;
+    game_pixel_format_t format;
     bool drm_ready;
     bool layer_ready;
     bool down[GAME_KEY_COUNT];
@@ -63,6 +64,17 @@ static const uint8_t font5x7[96][5] = {
  {0,65,54,8,0},{2,1,2,4,2},{127,127,127,127,127}
 };
 
+static inline uint16_t argb_to_rgb565(uint32_t argb)
+{
+    return (uint16_t)(((argb >> 8) & 0xf800) | ((argb >> 5) & 0x07e0) |
+                      ((argb >> 3) & 0x001f));
+}
+
+static inline int fb_bytes_per_pixel(const game_framebuffer_t *fb)
+{
+    return fb->format == GAME_PIXEL_FORMAT_RGB565 ? 2 : 4;
+}
+
 uint64_t game_monotonic_ms(void)
 {
     struct timespec ts;
@@ -77,6 +89,12 @@ static game_platform_impl_t *get_impl(const game_platform_t *platform)
 
 bool game_platform_init(game_platform_t *platform)
 {
+    return game_platform_init_ex(platform, GAME_PIXEL_FORMAT_RGB565);
+}
+
+bool game_platform_init_ex(game_platform_t *platform,
+                           game_pixel_format_t format)
+{
     game_platform_impl_t *impl;
     if(!platform || platform->impl) return false;
     impl = calloc(1, sizeof(*impl));
@@ -85,38 +103,41 @@ bool game_platform_init(game_platform_t *platform)
     impl->input_fd_count = 0;
     impl->repeat_delay = 350;
     impl->repeat_interval = 90;
+    impl->format = format;
 
-    if(drm_warpper_init(&impl->drm) < 0) goto fail;
+    if(hal_display_init(&impl->drm) < 0) goto fail;
     impl->drm_ready = true;
-    impl->width = impl->drm.conn->modes[0].hdisplay;
-    impl->height = impl->drm.conn->modes[0].vdisplay;
-    if(drm_warpper_init_layer(&impl->drm, GAME_LAYER, impl->width,
-                              impl->height,
-                              DRM_WARPPER_LAYER_MODE_ARGB8888) < 0)
+    hal_display_display_size(&impl->drm, &impl->width, &impl->height);
+    hal_display_layer_mode_t layer_mode =
+        format == GAME_PIXEL_FORMAT_RGB565 ? HAL_DISPLAY_LAYER_MODE_RGB565
+                                           : HAL_DISPLAY_LAYER_MODE_ARGB8888;
+    if(hal_display_init_layer(&impl->drm, GAME_LAYER, impl->width,
+                              impl->height, layer_mode) < 0)
         goto fail;
     impl->layer_ready = true;
     for(int i = 0; i < 2; i++) {
-        if(drm_warpper_allocate_buffer(&impl->drm, GAME_LAYER,
+        if(hal_display_allocate_buffer(&impl->drm, GAME_LAYER,
                                        &impl->buffers[i]) < 0)
             goto fail;
         game_framebuffer_t fb = {
             .pixels = (uint32_t *)impl->buffers[i].vaddr,
             .width = impl->width,
             .height = impl->height,
-            .pitch = (int)impl->buffers[i].pitch
+            .pitch = (int)impl->buffers[i].pitch,
+            .format = format
         };
         game_draw_fill(&fb, 0xff000000);
-        impl->items[i].type = DRM_WARPPER_ITEM_FLIP_FB;
+        impl->items[i].type = HAL_DISPLAY_ITEM_FLIP_FB;
         impl->items[i].fb_id = impl->buffers[i].fb_id;
         impl->items[i].userdata = &impl->buffers[i];
         impl->items[i].on_heap = false;
     }
-    if(drm_warpper_mount_layer(&impl->drm, GAME_LAYER, 0, 0,
+    if(hal_display_mount_layer(&impl->drm, GAME_LAYER, 0, 0,
                                &impl->buffers[0]) < 0)
         goto fail;
-    if(drm_warpper_enqueue_display_item(&impl->drm, GAME_LAYER,
+    if(hal_display_enqueue_display_item(&impl->drm, GAME_LAYER,
                                         &impl->items[0]) ||
-       drm_warpper_enqueue_display_item(&impl->drm, GAME_LAYER,
+       hal_display_enqueue_display_item(&impl->drm, GAME_LAYER,
                                         &impl->items[1]))
         goto fail;
     impl->input_fd_count = epass_input_open_nav(impl->input_fds, EPASS_INPUT_MAX_FDS);
@@ -135,14 +156,15 @@ bool game_platform_acquire_frame(game_platform_t *platform,
 {
     game_platform_impl_t *impl = get_impl(platform);
     if(!impl || !framebuffer || impl->acquired) return false;
-    if(drm_warpper_dequeue_free_item(&impl->drm, GAME_LAYER,
+    if(hal_display_dequeue_free_item(&impl->drm, GAME_LAYER,
                                      &impl->acquired) != 0)
         return false;
-    buffer_object_t *buffer = impl->acquired->userdata;
+    hal_buffer_t *buffer = impl->acquired->userdata;
     framebuffer->pixels = (uint32_t *)buffer->vaddr;
     framebuffer->width = (int)buffer->width;
     framebuffer->height = (int)buffer->height;
     framebuffer->pitch = (int)buffer->pitch;
+    framebuffer->format = impl->format;
     return true;
 }
 
@@ -150,10 +172,10 @@ bool game_platform_present(game_platform_t *platform)
 {
     game_platform_impl_t *impl = get_impl(platform);
     if(!impl || !impl->acquired) return false;
-    drm_warpper_queue_item_t *item = impl->acquired;
-    item->type = DRM_WARPPER_ITEM_FLIP_FB;
-    item->fb_id = ((buffer_object_t *)item->userdata)->fb_id;
-    if(drm_warpper_enqueue_display_item(&impl->drm, GAME_LAYER, item))
+    hal_display_queue_item_t *item = impl->acquired;
+    item->type = HAL_DISPLAY_ITEM_FLIP_FB;
+    item->fb_id = ((hal_buffer_t *)item->userdata)->fb_id;
+    if(hal_display_enqueue_display_item(&impl->drm, GAME_LAYER, item))
         return false;
     impl->acquired = NULL;
     return true;
@@ -165,13 +187,13 @@ void game_platform_destroy(game_platform_t *platform)
     if(!impl) return;
     epass_input_close(impl->input_fds, impl->input_fd_count);
     if(impl->drm_ready) {
-        drm_warpper_stop(&impl->drm);
+        hal_display_stop(&impl->drm);
         if(impl->layer_ready)
-            drm_warpper_disable_layer_sync(&impl->drm, GAME_LAYER);
+            hal_display_disable_layer_sync(&impl->drm, GAME_LAYER);
         for(int i = 0; i < 2; i++)
-            drm_warpper_free_buffer(&impl->drm, GAME_LAYER,
+            hal_display_free_buffer(&impl->drm, GAME_LAYER,
                                     &impl->buffers[i]);
-        drm_warpper_destroy(&impl->drm);
+        hal_display_destroy(&impl->drm);
     }
     free(impl);
     platform->impl = NULL;
@@ -266,7 +288,17 @@ bool game_key_repeated(const game_platform_t *platform, game_key_t key)
 
 void game_draw_fill(game_framebuffer_t *fb, uint32_t argb)
 {
-    if(!fb || !fb->pixels || fb->pitch < fb->width * 4) return;
+    if(!fb || !fb->pixels || fb->pitch < fb->width * fb_bytes_per_pixel(fb))
+        return;
+    if(fb->format == GAME_PIXEL_FORMAT_RGB565) {
+        uint16_t c = argb_to_rgb565(argb);
+        for(int y = 0; y < fb->height; y++) {
+            uint16_t *row = (uint16_t *)((uint8_t *)fb->pixels +
+                                         (size_t)y * fb->pitch);
+            for(int x = 0; x < fb->width; x++) row[x] = c;
+        }
+        return;
+    }
     for(int y = 0; y < fb->height; y++) {
         uint32_t *row = (uint32_t *)((uint8_t *)fb->pixels +
                                      (size_t)y * fb->pitch);
@@ -281,6 +313,15 @@ void game_draw_rect_px(game_framebuffer_t *fb, int x, int y, int width,
     int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;
     int x1 = x + width > fb->width ? fb->width : x + width;
     int y1 = y + height > fb->height ? fb->height : y + height;
+    if(fb->format == GAME_PIXEL_FORMAT_RGB565) {
+        uint16_t c = argb_to_rgb565(argb);
+        for(int py = y0; py < y1; py++) {
+            uint16_t *row = (uint16_t *)((uint8_t *)fb->pixels +
+                                         (size_t)py * fb->pitch);
+            for(int px = x0; px < x1; px++) row[px] = c;
+        }
+        return;
+    }
     for(int py = y0; py < y1; py++) {
         uint32_t *row = (uint32_t *)((uint8_t *)fb->pixels +
                                      (size_t)py * fb->pitch);
@@ -291,9 +332,11 @@ void game_draw_rect_px(game_framebuffer_t *fb, int x, int y, int width,
 static void put_pixel(game_framebuffer_t *fb, int x, int y, uint32_t argb)
 {
     if(x < 0 || y < 0 || x >= fb->width || y >= fb->height) return;
-    uint32_t *row = (uint32_t *)((uint8_t *)fb->pixels +
-                                 (size_t)y * fb->pitch);
-    row[x] = argb;
+    uint8_t *base = (uint8_t *)fb->pixels + (size_t)y * fb->pitch;
+    if(fb->format == GAME_PIXEL_FORMAT_RGB565)
+        ((uint16_t *)base)[x] = argb_to_rgb565(argb);
+    else
+        ((uint32_t *)base)[x] = argb;
 }
 
 void game_draw_line_px(game_framebuffer_t *fb, int x0, int y0, int x1,

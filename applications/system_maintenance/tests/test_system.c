@@ -69,7 +69,7 @@ static void test_boot_config(void)
     assert(boot_config_parse_buffer(serialized, serialized_length, &reparsed) == 0);
     assert(strcmp(reparsed.screen, "480x854") == 0);
     assert(strcmp(boot_config_get(&reparsed, "new_unknown"), "keep me") == 0);
-    assert(strcmp(boot_config_get(&reparsed, "bootargs"), "ignored") == 0);
+    assert(strcmp(boot_config_get(&reparsed, "extracmd"), "ignored") == 0);
     assert(boot_config_remove(&reparsed, "new_unknown") == 0);
     assert(boot_config_get(&reparsed, "new_unknown") == NULL);
 
@@ -111,7 +111,7 @@ static void test_registry(void)
 {
     const overlay_registry_t *registry = overlay_registry_get();
     const overlay_registry_item_t *item;
-    assert(registry->count == 13U);
+    assert(registry->count == 14U);
     item = overlay_registry_find("spi1");
     assert(item != NULL);
     assert(list_has(item->conflicts, item->conflicts_count, "uart2"));

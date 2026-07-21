@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "app_ver": 1,
   "name": "系统维护",
   "uuid": "90c4486e-b830-450c-b4d9-ec595818c5ff",
   "description": "查看启动配置、管理设备维护操作并安全格式化数据盘。",

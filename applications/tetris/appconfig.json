@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "app_ver": 1,
   "name": "俄罗斯方块",
   "uuid": "bdaae862-afa6-46ba-8678-e93a2cbfee09",
   "description": "经典俄罗斯方块，支持移动、旋转、软降、消行和计分。",

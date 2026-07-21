@@ -2,7 +2,6 @@ set(APPLICATION_NAME ebook_reader)
 
 add_executable(${APPLICATION_NAME}
     src/main.c
-    src/port/drm_warpper.c
     src/port/platform.c
     src/reader/reader.c
     src/reader/gbk_table.c
@@ -25,6 +24,7 @@ target_compile_options(${APPLICATION_NAME} PRIVATE
 )
 
 target_link_libraries(${APPLICATION_NAME} PRIVATE
+    hal_display
     epass_input
     lvgl
     epass_fonts
