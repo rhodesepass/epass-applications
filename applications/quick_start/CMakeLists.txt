@@ -34,7 +34,7 @@ target_compile_options(${APPLICATION_NAME} PRIVATE
 target_link_libraries(${APPLICATION_NAME} PRIVATE
     hal_display
     quick_start_core
-    epass_input
+    hal_input
     lvgl
     epass_fonts
     PNG::PNG
@@ -62,7 +62,7 @@ if(QUICK_START_PREVIEW)
         ${FREETYPE_INCLUDE_DIRS}
     )
     target_link_libraries(quick_start_preview PRIVATE
-        hal_display quick_start_core epass_input lvgl epass_fonts PNG::PNG
+        hal_display quick_start_core hal_input lvgl epass_fonts PNG::PNG
         ${LIBDRM_LIBRARIES} ${FREETYPE_LIBRARIES} pthread m)
 endif()
 

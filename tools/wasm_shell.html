@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>epass wasm</title>
+<style>
+  html, body {
+    margin: 0; height: 100%;
+    background: #07131a; color: #91aeb5;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-family: monospace;
+  }
+  /* 逻辑分辨率 360x640, 整数感缩放靠 pixelated */
+  canvas {
+    image-rendering: pixelated;
+    border: 1px solid #3a6874;
+    max-height: 92vh; max-width: 95vw;
+  }
+  p { margin: 8px 0 0; font-size: 12px; }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1"></canvas>
+<p>1/&uarr;/&larr; &nbsp; 2/&darr;/&rarr; &nbsp; 3/Enter &nbsp; 4/Esc</p>
+{{{ SCRIPT }}}
+</body>
+</html>

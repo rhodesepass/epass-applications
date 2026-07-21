@@ -1,2 +1,1 @@
-add_subdirectory(epass_input)
 add_subdirectory(epass_game)

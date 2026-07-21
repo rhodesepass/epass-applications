@@ -1,7 +1,7 @@
 #pragma once
 
 #include "hal_display.h"
-#include "epass_input.h"
+#include "hal_input.h"
 #include <lvgl.h>
 #include <stdbool.h>
 
@@ -29,8 +29,7 @@ typedef struct {
     lv_display_t *display;
     int last_flushed;
     bool bar_visible;
-    int input_fds[EPASS_INPUT_MAX_FDS];
-    int input_fd_count;
+    hal_input_t input;
     int width, height;          /* 整屏 */
     int bar_width, bar_height;
     int bar_y;

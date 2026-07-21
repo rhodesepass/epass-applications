@@ -1,5 +1,8 @@
+# epass_game.c 是 epass 后端; wasm 后端(game_platform_wasm.c)不进这个库,
+# 由 tools/build_wasm_game.sh 用 emcc 单独编
 add_library(epass_game STATIC
   src/epass_game.c
+  src/game_draw.c
   src/log.c
 )
 
@@ -9,7 +12,7 @@ target_include_directories(epass_game
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${LIBDRM_INCLUDE_DIRS}
 )
 target_compile_options(epass_game PRIVATE ${LIBDRM_CFLAGS_OTHER})
-target_link_libraries(epass_game PUBLIC hal_display ${LIBDRM_LIBRARIES} pthread m PRIVATE epass_input)
+target_link_libraries(epass_game PUBLIC hal_display ${LIBDRM_LIBRARIES} pthread m PRIVATE hal_input)
 
 if(BUILD_TESTING)
   add_executable(epass_game_draw_test tests/test_draw.c)

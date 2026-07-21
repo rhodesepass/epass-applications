@@ -2,7 +2,6 @@
 #include "config.h"
 
 #include <fcntl.h>
-#include <linux/input.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,9 +75,7 @@ bool vp_platform_init(vp_platform_t *platform)
                            platform->bar_buffers[1].vaddr, bytes,
                            LV_DISPLAY_RENDER_MODE_DIRECT);
 
-    platform->input_fd_count = epass_input_open_nav(platform->input_fds,
-                                                    EPASS_INPUT_MAX_FDS);
-    if(platform->input_fd_count <= 0) goto fail;
+    if(hal_input_init(&platform->input) <= 0) goto fail;
     return true;
 fail:
     vp_platform_destroy(platform);
@@ -87,25 +84,17 @@ fail:
 
 bool vp_platform_read_key_event(vp_platform_t *platform, vp_key_event_t *ev)
 {
-    struct input_event event;
-    for(int i = 0; i < platform->input_fd_count; i++) {
-        while(read(platform->input_fds[i], &event, sizeof(event)) == sizeof(event)) {
-            if(event.type != EV_KEY) continue;
-            vp_key_t key;
-            switch(event.code) {
-            case KEY_1: case KEY_UP: case KEY_LEFT: key = VP_KEY_PREV; break;
-            case KEY_2: case KEY_DOWN: case KEY_RIGHT: key = VP_KEY_NEXT; break;
-            case KEY_3: case KEY_ENTER: key = VP_KEY_ENTER; break;
-            case KEY_4: case KEY_ESC: case KEY_BACK: key = VP_KEY_BACK; break;
-            default: continue;
-            }
-            ev->key = key;
-            ev->pressed = event.value != 0;
-            ev->repeat = event.value == 2;
-            return true;
-        }
+    hal_input_event_t hev;
+    if(!hal_input_next_event(&platform->input, &hev)) return false;
+    switch(hev.key) {
+    case HAL_KEY_1: ev->key = VP_KEY_PREV; break;
+    case HAL_KEY_2: ev->key = VP_KEY_NEXT; break;
+    case HAL_KEY_3: ev->key = VP_KEY_ENTER; break;
+    default:        ev->key = VP_KEY_BACK; break;
     }
-    return false;
+    ev->pressed = hev.pressed;
+    ev->repeat = hev.repeat;
+    return true;
 }
 
 void vp_platform_show_bar(vp_platform_t *platform, bool show)
@@ -123,7 +112,7 @@ void vp_platform_show_bar(vp_platform_t *platform, bool show)
 
 void vp_platform_destroy(vp_platform_t *platform)
 {
-    epass_input_close(platform->input_fds, platform->input_fd_count);
+    hal_input_destroy(&platform->input);
     if(platform->display) lv_display_delete(platform->display);
     if(platform->bar_buffers[0].vaddr)
         hal_display_free_buffer(&platform->drm, HAL_DISPLAY_LAYER_UI,

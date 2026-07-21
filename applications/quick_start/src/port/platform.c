@@ -2,8 +2,9 @@
 
 #include "platform.h"
 
+#include "hal_run.h"
+
 #include <fcntl.h>
-#include <linux/input.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,7 +32,6 @@ static void flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *pixe
 bool tutorial_platform_init(tutorial_platform_t *platform)
 {
     memset(platform, 0, sizeof(*platform));
-    platform->input_fd_count = 0;
     if(hal_display_init(&platform->drm) < 0) return false;
     hal_display_display_size(&platform->drm, &platform->width, &platform->height);
     if(hal_display_init_layer(&platform->drm, HAL_DISPLAY_LAYER_UI, platform->width, platform->height,
@@ -54,8 +54,7 @@ bool tutorial_platform_init(tutorial_platform_t *platform)
     lv_display_set_buffers(platform->display, platform->buffers[0].vaddr,
                            platform->buffers[1].vaddr, bytes,
                            LV_DISPLAY_RENDER_MODE_DIRECT);
-    platform->input_fd_count = epass_input_open_nav(platform->input_fds, EPASS_INPUT_MAX_FDS);
-    if(platform->input_fd_count <= 0) goto fail;
+    if(hal_input_init(&platform->input) <= 0) goto fail;
     /* 遮罩层拿不到就算了, 只是没有过渡动画, 不该让整个应用起不来。
      * allocate 取的是 init_layer 登记的宽高, 不 init 会拿 0×0 造 buffer */
     if(hal_display_layer_can_fade(&platform->drm, HAL_DISPLAY_LAYER_TOP) &&
@@ -73,17 +72,15 @@ fail:
 
 tutorial_key_t tutorial_platform_read_key(tutorial_platform_t *platform)
 {
-    struct input_event event;
-    for(int i = 0; i < platform->input_fd_count; i++) {
-        while(read(platform->input_fds[i], &event, sizeof(event)) == sizeof(event)) {
-            if(event.type != EV_KEY || event.value == 0) continue;
-            switch(event.code) {
-            case KEY_1: case KEY_UP: case KEY_LEFT: return TUTORIAL_KEY_PREV;
-            case KEY_2: case KEY_DOWN: case KEY_RIGHT: return TUTORIAL_KEY_NEXT;
-            case KEY_3: case KEY_ENTER: return TUTORIAL_KEY_ENTER;
-            case KEY_4: case KEY_ESC: case KEY_BACK: return TUTORIAL_KEY_BACK;
-            default: break;
-            }
+    hal_input_event_t ev;
+    while(hal_input_next_event(&platform->input, &ev)) {
+        if(!ev.pressed) continue;
+        switch(ev.key) {
+        case HAL_KEY_1: return TUTORIAL_KEY_PREV;
+        case HAL_KEY_2: return TUTORIAL_KEY_NEXT;
+        case HAL_KEY_3: return TUTORIAL_KEY_ENTER;
+        case HAL_KEY_4: return TUTORIAL_KEY_BACK;
+        default: break;
         }
     }
     return TUTORIAL_KEY_NONE;
@@ -108,7 +105,9 @@ void tutorial_platform_overlay_fade(tutorial_platform_t *platform, int from, int
     int steps = ms / step_ms;
     if(steps < 1) steps = 1;
     for(int i = 1; i <= steps; i++) {
-        nanosleep(&(struct timespec){ 0, step_ms * 1000000L }, NULL);
+        /* hal_idle 而非裸 nanosleep: wasm 上前者才会让出主线程,
+         * 浏览器才有机会把每一步 alpha 画出来 */
+        hal_idle(step_ms);
         hal_display_set_layer_alpha(&platform->drm, HAL_DISPLAY_LAYER_TOP,
                                     (uint8_t)(from + (to - from) * i / steps));
     }
@@ -124,7 +123,7 @@ void tutorial_platform_set_brightness(int level)
 
 void tutorial_platform_destroy(tutorial_platform_t *platform)
 {
-    epass_input_close(platform->input_fds, platform->input_fd_count);
+    hal_input_destroy(&platform->input);
     if(platform->display) lv_display_delete(platform->display);
     if(platform->has_overlay)
         hal_display_free_buffer(&platform->drm, HAL_DISPLAY_LAYER_TOP, &platform->overlay_buf);
@@ -132,5 +131,4 @@ void tutorial_platform_destroy(tutorial_platform_t *platform)
     hal_display_free_buffer(&platform->drm, HAL_DISPLAY_LAYER_UI, &platform->buffers[1]);
     hal_display_destroy(&platform->drm);
     memset(platform, 0, sizeof(*platform));
-    platform->input_fd_count = 0;
 }

@@ -121,71 +121,83 @@ static bool render(game_platform_t *platform, const game_2048_t *game,
     return game_platform_present(platform);
 }
 
+typedef struct {
+    game_platform_t platform;
+    game_2048_t game;
+    game_2048_direction_t direction;
+    bool dirty;
+    bool ok_was_down;
+    bool ok_consumed;
+    uint64_t ok_started;
+} game_2048_app_t;
+
+static bool tick(void *userdata)
+{
+    game_2048_app_t *app = userdata;
+
+    if(!running) return false;
+    game_input_update(&app->platform);
+
+    if(game_key_pressed(&app->platform, GAME_KEY_BACK)) return false;
+    if(game_key_pressed(&app->platform, GAME_KEY_UP)) {
+        app->direction = (app->direction + GAME_2048_DIRECTION_COUNT - 1) %
+                         GAME_2048_DIRECTION_COUNT;
+        app->dirty = true;
+    }
+    if(game_key_pressed(&app->platform, GAME_KEY_DOWN)) {
+        app->direction = (app->direction + 1) % GAME_2048_DIRECTION_COUNT;
+        app->dirty = true;
+    }
+
+    bool ok_down = game_key_down(&app->platform, GAME_KEY_OK);
+    bool terminal = app->game.won || !game_2048_can_move(&app->game);
+    if(game_key_pressed(&app->platform, GAME_KEY_OK)) {
+        app->ok_started = game_monotonic_ms();
+        app->ok_consumed = false;
+        if(terminal) {
+            game_2048_reset(&app->game, (uint32_t)app->ok_started);
+            app->ok_consumed = true;
+            app->dirty = true;
+        }
+    }
+    if(ok_down && !app->ok_consumed &&
+       game_monotonic_ms() - app->ok_started >= HOLD_TO_RESTART_MS) {
+        game_2048_reset(&app->game, (uint32_t)game_monotonic_ms());
+        app->ok_consumed = true;
+        app->dirty = true;
+    }
+    if(app->ok_was_down && !ok_down && !app->ok_consumed) {
+        if(game_2048_move(&app->game, app->direction)) app->dirty = true;
+        app->ok_consumed = true;
+    }
+    app->ok_was_down = ok_down;
+
+    if(app->dirty) {
+        if(!render(&app->platform, &app->game, app->direction)) {
+            fprintf(stderr, "game_2048: frame presentation failed\n");
+            return false;
+        }
+        app->dirty = false;
+    }
+    game_platform_idle(&app->platform, 10);
+    return true;
+}
+
 int main(void)
 {
-    game_platform_t platform = {0};
-    game_2048_t game;
-    game_2048_direction_t direction = GAME_2048_UP;
-    bool dirty = true;
-    bool ok_was_down = false;
-    bool ok_consumed = false;
-    uint64_t ok_started = 0;
+    static game_2048_app_t app = {.direction = GAME_2048_UP, .dirty = true};
 
     signal(SIGINT, stop_running);
     signal(SIGTERM, stop_running);
-    if(!game_platform_init(&platform)) {
+    if(!game_platform_init(&app.platform)) {
         fprintf(stderr, "game_2048: platform initialization failed\n");
         return 1;
     }
 
-    game_2048_reset(&game, (uint32_t)(game_monotonic_ms() ^ (uint64_t)getpid()));
-    while(running) {
-        game_input_update(&platform);
+    game_2048_reset(&app.game,
+                    (uint32_t)(game_monotonic_ms() ^ (uint64_t)getpid()));
+    game_run(&app.platform, tick, &app);
 
-        if(game_key_pressed(&platform, GAME_KEY_BACK)) running = 0;
-        if(game_key_pressed(&platform, GAME_KEY_UP)) {
-            direction = (direction + GAME_2048_DIRECTION_COUNT - 1) %
-                        GAME_2048_DIRECTION_COUNT;
-            dirty = true;
-        }
-        if(game_key_pressed(&platform, GAME_KEY_DOWN)) {
-            direction = (direction + 1) % GAME_2048_DIRECTION_COUNT;
-            dirty = true;
-        }
-
-        bool ok_down = game_key_down(&platform, GAME_KEY_OK);
-        bool terminal = game.won || !game_2048_can_move(&game);
-        if(game_key_pressed(&platform, GAME_KEY_OK)) {
-            ok_started = game_monotonic_ms();
-            ok_consumed = false;
-            if(terminal) {
-                game_2048_reset(&game, (uint32_t)ok_started);
-                ok_consumed = true;
-                dirty = true;
-            }
-        }
-        if(ok_down && !ok_consumed &&
-           game_monotonic_ms() - ok_started >= HOLD_TO_RESTART_MS) {
-            game_2048_reset(&game, (uint32_t)game_monotonic_ms());
-            ok_consumed = true;
-            dirty = true;
-        }
-        if(ok_was_down && !ok_down && !ok_consumed) {
-            if(game_2048_move(&game, direction)) dirty = true;
-            ok_consumed = true;
-        }
-        ok_was_down = ok_down;
-
-        if(dirty && running) {
-            if(!render(&platform, &game, direction)) {
-                fprintf(stderr, "game_2048: frame presentation failed\n");
-                running = 0;
-            }
-            dirty = false;
-        }
-        usleep(10000);
-    }
-
-    game_platform_destroy(&platform);
+    game_platform_destroy(&app.platform);
     return 0;
 }

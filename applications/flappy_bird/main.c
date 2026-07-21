@@ -131,9 +131,27 @@ static void draw_game(game_framebuffer_t *fb)
     }
 }
 
+static bool tick(void *userdata)
+{
+    game_platform_t *platform = userdata;
+
+    if(!running) return false;
+    game_input_update(platform);
+    if(game_key_pressed(platform, GAME_KEY_BACK)) return false;
+    if(game_key_pressed(platform, GAME_KEY_OK) ||
+       game_key_pressed(platform, GAME_KEY_UP))
+        jump();
+
+    update_game();
+    game_framebuffer_t fb;
+    if(!game_platform_acquire_frame(platform, &fb)) return false;
+    draw_game(&fb);
+    return game_platform_present(platform);
+}
+
 int main(void)
 {
-    game_platform_t platform = {0};
+    static game_platform_t platform;
     struct sigaction action = {0};
     action.sa_handler = handle_signal;
     sigemptyset(&action.sa_mask);
@@ -144,19 +162,7 @@ int main(void)
     reset_game();
     if(!game_platform_init(&platform)) return 1;
 
-    while(running) {
-        game_input_update(&platform);
-        if(game_key_pressed(&platform, GAME_KEY_BACK)) break;
-        if(game_key_pressed(&platform, GAME_KEY_OK) ||
-           game_key_pressed(&platform, GAME_KEY_UP))
-            jump();
-
-        update_game();
-        game_framebuffer_t fb;
-        if(!game_platform_acquire_frame(&platform, &fb)) break;
-        draw_game(&fb);
-        if(!game_platform_present(&platform)) break;
-    }
+    game_run(&platform, tick, &platform);
 
     game_platform_destroy(&platform);
     return 0;

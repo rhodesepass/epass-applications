@@ -51,15 +51,66 @@ static const char *pressed_key_name(const game_platform_t *platform)
     return " ";
 }
 
+typedef struct {
+    game_platform_t platform;
+    void *initialized_buffers[2];
+    uint64_t start_ms;
+    uint64_t elapsed_ms;
+    bool timing;
+    int frame_count;
+} epniccc_app_t;
+
+static bool tick(void *userdata)
+{
+    epniccc_app_t *app = userdata;
+
+    if(!running) return false;
+    game_input_update(&app->platform);
+    if(game_key_pressed(&app->platform, GAME_KEY_BACK)) return false;
+    const char *key_name = pressed_key_name(&app->platform);
+
+    game_framebuffer_t fb;
+    if(!game_platform_acquire_frame(&app->platform, &fb)) return false;
+    if(fb.pixels != app->initialized_buffers[0] &&
+       fb.pixels != app->initialized_buffers[1]) {
+        draw_background(&fb);
+        if(!app->initialized_buffers[0])
+            app->initialized_buffers[0] = fb.pixels;
+        else
+            app->initialized_buffers[1] = fb.pixels;
+    }
+
+    game_draw_rect(&fb, 0, 108, GAME_LOGICAL_WIDTH, 62, 0xff000000);
+    game_draw_text(&fb, 10, 112, "FRAME:", 2, 0xffffffff);
+    game_draw_number(&fb, 82, 112, app->frame_count, 2, 0xffffffff);
+    game_draw_text(&fb, 154, 112, "TIME:", 2, 0xffffffff);
+    if(app->timing || app->frame_count % 100 >= 50)
+        game_draw_number(&fb, 214, 112,
+                         app->timing
+                             ? (int)(game_monotonic_ms() - app->start_ms)
+                             : (int)app->elapsed_ms,
+                         2, 0xffffffff);
+    game_draw_text(&fb, 10, 136, "PRESSED KEY:", 2, 0xffffffff);
+    game_draw_text(&fb, 154, 136, key_name, 2, 0xffffffff);
+
+    niccc_draw_frame(&fb, app->frame_count);
+    if(!game_platform_present(&app->platform)) return false;
+
+    app->frame_count++;
+    if(app->frame_count >= 1800) {
+        app->frame_count = 0;
+        if(app->timing) {
+            app->elapsed_ms = game_monotonic_ms() - app->start_ms;
+            app->timing = false;
+        }
+    }
+    return true;
+}
+
 int main(void)
 {
-    game_platform_t platform = {0};
+    static epniccc_app_t app = {.timing = true};
     struct sigaction action = {0};
-    void *initialized_buffers[2] = {0};
-    uint64_t start_ms;
-    uint64_t elapsed_ms = 0;
-    bool timing = true;
-    int frame_count = 0;
     int result = 1;
 
     action.sa_handler = handle_signal;
@@ -69,53 +120,14 @@ int main(void)
 
     if(!niccc_init("scene1.bin")) return 1;
     /* niccc writes 32-bit pixels straight into the framebuffer. */
-    if(!game_platform_init_ex(&platform, GAME_PIXEL_FORMAT_ARGB8888))
+    if(!game_platform_init_ex(&app.platform, GAME_PIXEL_FORMAT_ARGB8888))
         goto cleanup_scene;
-    start_ms = game_monotonic_ms();
+    app.start_ms = game_monotonic_ms();
 
-    while(running) {
-        game_input_update(&platform);
-        if(game_key_pressed(&platform, GAME_KEY_BACK)) break;
-        const char *key_name = pressed_key_name(&platform);
-
-        game_framebuffer_t fb;
-        if(!game_platform_acquire_frame(&platform, &fb)) break;
-        if(fb.pixels != initialized_buffers[0] &&
-           fb.pixels != initialized_buffers[1]) {
-            draw_background(&fb);
-            if(!initialized_buffers[0])
-                initialized_buffers[0] = fb.pixels;
-            else
-                initialized_buffers[1] = fb.pixels;
-        }
-
-        game_draw_rect(&fb, 0, 108, GAME_LOGICAL_WIDTH, 62, 0xff000000);
-        game_draw_text(&fb, 10, 112, "FRAME:", 2, 0xffffffff);
-        game_draw_number(&fb, 82, 112, frame_count, 2, 0xffffffff);
-        game_draw_text(&fb, 154, 112, "TIME:", 2, 0xffffffff);
-        if(timing || frame_count % 100 >= 50)
-            game_draw_number(&fb, 214, 112,
-                             timing ? (int)(game_monotonic_ms() - start_ms)
-                                    : (int)elapsed_ms,
-                             2, 0xffffffff);
-        game_draw_text(&fb, 10, 136, "PRESSED KEY:", 2, 0xffffffff);
-        game_draw_text(&fb, 154, 136, key_name, 2, 0xffffffff);
-
-        niccc_draw_frame(&fb, frame_count);
-        if(!game_platform_present(&platform)) break;
-
-        frame_count++;
-        if(frame_count >= 1800) {
-            frame_count = 0;
-            if(timing) {
-                elapsed_ms = game_monotonic_ms() - start_ms;
-                timing = false;
-            }
-        }
-    }
+    game_run(&app.platform, tick, &app);
 
     result = 0;
-    game_platform_destroy(&platform);
+    game_platform_destroy(&app.platform);
 cleanup_scene:
     niccc_destroy();
     return result;

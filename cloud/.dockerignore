@@ -1,0 +1,2 @@
+# 构建只需要 devbox/ 和 data/sdk.tar.gz; 会话工作区可能很大
+data/workspaces/

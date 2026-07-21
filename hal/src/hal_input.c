@@ -1,6 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 
-#include "epass_input.h"
+#include "hal_input.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -34,28 +34,27 @@ static int has_nav_keys(int fd)
            key_bit_test(key_bits, KEY_4);
 }
 
-int epass_input_open_nav(int *fds, int max_fds)
+int hal_input_init(hal_input_t *in)
 {
-    if(!fds || max_fds <= 0) {
-        return 0;
-    }
+    if(!in) return 0;
+    for(int i = 0; i < HAL_INPUT_MAX_FDS; i++) in->fds[i] = -1;
+    in->fd_count = 0;
 
     DIR *dir = opendir("/dev/input");
     if(!dir) {
-        fprintf(stderr, "epass_input: open /dev/input failed: %s\n", strerror(errno));
+        fprintf(stderr, "hal_input: open /dev/input failed: %s\n", strerror(errno));
         return 0;
     }
 
-    int count = 0;
     struct dirent *ent;
     while((ent = readdir(dir)) != NULL) {
         /* 只认 eventN, 跳过 mice / js* 等 */
         if(strncmp(ent->d_name, "event", 5) != 0) {
             continue;
         }
-        if(count >= max_fds) {
-            fprintf(stderr, "epass_input: too many devices (max %d), skipping rest\n",
-                    max_fds);
+        if(in->fd_count >= HAL_INPUT_MAX_FDS) {
+            fprintf(stderr, "hal_input: too many devices (max %d), skipping rest\n",
+                    HAL_INPUT_MAX_FDS);
             break;
         }
         char path[PATH_MAX];
@@ -68,21 +67,49 @@ int epass_input_open_nav(int *fds, int max_fds)
             close(fd);
             continue;
         }
-        fds[count++] = fd;
+        in->fds[in->fd_count++] = fd;
     }
     closedir(dir);
-    return count;
+    return in->fd_count;
 }
 
-void epass_input_close(int *fds, int count)
+void hal_input_destroy(hal_input_t *in)
 {
-    if(!fds) {
-        return;
-    }
-    for(int i = 0; i < count; i++) {
-        if(fds[i] >= 0) {
-            close(fds[i]);
-            fds[i] = -1;
+    if(!in) return;
+    for(int i = 0; i < in->fd_count; i++) {
+        if(in->fds[i] >= 0) {
+            close(in->fds[i]);
+            in->fds[i] = -1;
         }
     }
+    in->fd_count = 0;
+}
+
+static int map_key(unsigned short code)
+{
+    switch(code) {
+    case KEY_1: case KEY_UP:   case KEY_LEFT:  return HAL_KEY_1;
+    case KEY_2: case KEY_DOWN: case KEY_RIGHT: return HAL_KEY_2;
+    case KEY_3: case KEY_ENTER:                return HAL_KEY_3;
+    case KEY_4: case KEY_ESC:  case KEY_BACK:  return HAL_KEY_4;
+    default: return -1;
+    }
+}
+
+bool hal_input_next_event(hal_input_t *in, hal_input_event_t *ev)
+{
+    struct input_event event;
+    if(!in || !ev) return false;
+    for(int i = 0; i < in->fd_count; i++) {
+        while(read(in->fds[i], &event, sizeof(event)) == sizeof(event)) {
+            if(event.type != EV_KEY) continue;
+            int key = map_key(event.code);
+            if(key < 0) continue;
+            ev->key = (hal_key_t)key;
+            ev->pressed = event.value != 0;
+            ev->repeat = event.value == 2;
+            return true;
+        }
+    }
+    return false;
 }

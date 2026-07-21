@@ -83,60 +83,72 @@ static void draw_scene(game_framebuffer_t *fb, const snake_game_t *game)
     draw_centered(fb, 591, "4 EXIT", 1, muted);
 }
 
+typedef struct {
+    game_platform_t platform;
+    snake_game_t game;
+    uint64_t next_step;
+} snake_app_t;
+
+static bool tick(void *userdata)
+{
+    snake_app_t *app = userdata;
+    game_framebuffer_t framebuffer;
+
+    if(!running) return false;
+    game_input_update(&app->platform);
+    if(game_key_pressed(&app->platform, GAME_KEY_BACK)) return false;
+
+    if(game_key_pressed(&app->platform, GAME_KEY_UP) ||
+       game_key_repeated(&app->platform, GAME_KEY_UP))
+        snake_game_turn_left(&app->game);
+    if(game_key_pressed(&app->platform, GAME_KEY_DOWN) ||
+       game_key_repeated(&app->platform, GAME_KEY_DOWN))
+        snake_game_turn_right(&app->game);
+
+    if(game_key_pressed(&app->platform, GAME_KEY_OK)) {
+        if(app->game.state == SNAKE_STATE_READY) {
+            snake_game_start(&app->game);
+        } else if(app->game.state == SNAKE_STATE_GAME_OVER) {
+            snake_game_init(&app->game, (uint32_t)game_monotonic_ms());
+            snake_game_start(&app->game);
+        } else {
+            snake_game_toggle_pause(&app->game);
+        }
+        app->next_step = game_monotonic_ms();
+    }
+
+    uint64_t now = game_monotonic_ms();
+    unsigned step_ms = app->game.score < 240
+                           ? 180u - (unsigned)app->game.score / 3u
+                           : 100u;
+    if(app->game.state == SNAKE_STATE_RUNNING && now >= app->next_step) {
+        snake_game_step(&app->game);
+        app->next_step = now + step_ms;
+    }
+
+    if(!game_platform_acquire_frame(&app->platform, &framebuffer))
+        return false;
+    draw_scene(&framebuffer, &app->game);
+    return game_platform_present(&app->platform);
+}
+
 int main(void)
 {
-    game_platform_t platform = {0};
-    snake_game_t game;
-    game_framebuffer_t framebuffer;
-    uint64_t next_step;
+    static snake_app_t app;
 
     signal(SIGINT, stop_running);
     signal(SIGTERM, stop_running);
-    if(!game_platform_init(&platform)) {
+    if(!game_platform_init(&app.platform)) {
         fprintf(stderr, "snake: failed to initialize platform\n");
         return 1;
     }
 
-    snake_game_init(&game, (uint32_t)game_monotonic_ms());
-    game_input_set_repeat(&platform, 300, 120);
-    next_step = game_monotonic_ms();
+    snake_game_init(&app.game, (uint32_t)game_monotonic_ms());
+    game_input_set_repeat(&app.platform, 300, 120);
+    app.next_step = game_monotonic_ms();
 
-    while(running) {
-        game_input_update(&platform);
-        if(game_key_pressed(&platform, GAME_KEY_BACK)) break;
+    game_run(&app.platform, tick, &app);
 
-        if(game_key_pressed(&platform, GAME_KEY_UP) ||
-           game_key_repeated(&platform, GAME_KEY_UP))
-            snake_game_turn_left(&game);
-        if(game_key_pressed(&platform, GAME_KEY_DOWN) ||
-           game_key_repeated(&platform, GAME_KEY_DOWN))
-            snake_game_turn_right(&game);
-
-        if(game_key_pressed(&platform, GAME_KEY_OK)) {
-            if(game.state == SNAKE_STATE_READY) {
-                snake_game_start(&game);
-            } else if(game.state == SNAKE_STATE_GAME_OVER) {
-                snake_game_init(&game, (uint32_t)game_monotonic_ms());
-                snake_game_start(&game);
-            } else {
-                snake_game_toggle_pause(&game);
-            }
-            next_step = game_monotonic_ms();
-        }
-
-        uint64_t now = game_monotonic_ms();
-        unsigned step_ms = game.score < 240 ? 180u - (unsigned)game.score / 3u
-                                            : 100u;
-        if(game.state == SNAKE_STATE_RUNNING && now >= next_step) {
-            snake_game_step(&game);
-            next_step = now + step_ms;
-        }
-
-        if(!game_platform_acquire_frame(&platform, &framebuffer)) break;
-        draw_scene(&framebuffer, &game);
-        if(!game_platform_present(&platform)) break;
-    }
-
-    game_platform_destroy(&platform);
+    game_platform_destroy(&app.platform);
     return 0;
 }

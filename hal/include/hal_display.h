@@ -1,6 +1,6 @@
-#ifdef _WIN32
-// Windows(mingw) 无 libdrm。PC/SDL 后端不接 DRM，给 drm 类型/宏占位即可——
-// hal_display_t 里那几个 drm 字段在 SDL 后端根本不会被触碰。Linux PC 仍走真头。
+#if defined(_WIN32) || defined(__EMSCRIPTEN__)
+// Windows(mingw)/emscripten 无 libdrm。PC/SDL 与 wasm 后端不接 DRM，给 drm
+// 类型/宏占位即可——hal_display_t 里那几个 drm 字段在这些后端根本不会被触碰。
 typedef struct { int _unused; } drmVBlank;
 typedef struct drmModeConnector drmModeConnector;   // 前向声明，仅作指针
 typedef struct drmModeRes drmModeRes;

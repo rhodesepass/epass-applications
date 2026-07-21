@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>epass wasm</title>
+<style>
+  html, body {
+    margin: 0; height: 100%;
+    background: #07131a; color: #91aeb5;
+    display: flex; align-items: center; justify-content: center;
+    gap: 18px; font-family: monospace;
+  }
+  canvas {
+    image-rendering: pixelated;
+    border: 1px solid #3a6874;
+    max-height: 92vh; max-width: 60vw;
+  }
+  #vfs {
+    width: 250px; max-height: 92vh; overflow-y: auto;
+    border: 1px solid #3a6874; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 8px; font-size: 13px;
+  }
+  #vfs h1 { font-size: 14px; margin: 0; color: #a4f06d; }
+  #vfs .hint { font-size: 11px; color: #5b7681; margin: 0; }
+  #vfs ul { list-style: none; margin: 0; padding: 0;
+            display: flex; flex-direction: column; gap: 4px; }
+  #vfs li { display: flex; align-items: center; gap: 6px; }
+  #vfs li span { flex: 1; overflow: hidden; text-overflow: ellipsis;
+                 white-space: nowrap; }
+  #vfs button {
+    background: #102630; color: #91aeb5; border: 1px solid #3a6874;
+    font-family: monospace; font-size: 12px; padding: 2px 8px; cursor: pointer;
+  }
+  #vfs button:hover:enabled { background: #3a6874; color: #e8f2f2; }
+  #vfs button:disabled { opacity: .4; cursor: default; }
+  #vfs button.del { border-color: #5b3038; color: #b07070; padding: 2px 5px; }
+  #vfs button.del:hover:enabled { background: #5b3038; color: #ffb0b0; }
+  #vfs .keys { font-size: 11px; color: #5b7681; }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1"></canvas>
+<div id="vfs">
+  <h1>文件系统 /data</h1>
+  <p class="hint">模拟设备的 fg_ext 启动: 选一个文件, 以它为参数拉起应用
+    (真机上这一步由文件管理器按扩展名完成)。文件与阅读进度存在浏览器
+    IndexedDB 里, 刷新不丢。</p>
+  <ul id="vfs-list"><li><span>runtime 加载中…</span></li></ul>
+  <input id="vfs-upload" type="file" multiple hidden>
+  <button id="vfs-add">+ 上传文件到 /data</button>
+  <p class="hint" id="vfs-status"></p>
+  <p class="keys">1/&uarr;/&larr; &nbsp; 2/&darr;/&rarr; &nbsp; 3/Enter &nbsp; 4/Esc</p>
+</div>
+<script>
+  var vfsRunning = false;
+
+  var Module = {
+    onRuntimeInitialized: function() {
+      vfsSeedSamples();
+      vfsRefresh();
+      /* 主页文件面板经 ?open=/data/xxx 直启, 模拟文件管理器把路径递过来 */
+      var open = new URLSearchParams(location.search).get('open');
+      if (open) {
+        try {
+          if (Module.FS.analyzePath(open).exists) {
+            vfsOpen(open.replace(/^\/data\//, ''));
+          } else {
+            vfsStatus('文件不存在: ' + open);
+          }
+        } catch (e) { vfsStatus('打开失败: ' + open); }
+      }
+    },
+    /* 应用退出(hal_display_destroy)后: canvas 已被 hal 涂黑, 这里解锁面板并落盘 */
+    onHalExit: function() {
+      vfsRunning = false;
+      vfsStatus('应用已退出, 可再选文件启动');
+      Module.FS.syncfs(false, function() {});
+      vfsRefresh();
+    }
+  };
+
+  function vfsStatus(text) {
+    document.getElementById('vfs-status').textContent = text;
+  }
+
+  /* 首次使用把 /samples 里的示例播种进 /data(IDBFS); 用户删掉后不再复活。
+   * /data 是全应用共享的, 播种标记按应用记, 免得先来者挡住后来者的样例 */
+  var vfsAppDir = location.pathname.split('/').filter(Boolean).slice(-1)[0] || 'app';
+  function vfsSeedSamples() {
+    var FS = Module.FS;
+    var mark = '/data/.seeded-' + vfsAppDir;
+    var seeded;
+    try { seeded = FS.analyzePath(mark).exists; } catch (e) { seeded = false; }
+    if (seeded) return;
+    var names = [];
+    try {
+      names = FS.readdir('/samples').filter(function(n) {
+        return n !== '.' && n !== '..';
+      });
+    } catch (e) { return; }
+    names.forEach(function(name) {
+      try {
+        if (!FS.analyzePath('/data/' + name).exists)
+          FS.writeFile('/data/' + name, FS.readFile('/samples/' + name));
+      } catch (e) {}
+    });
+    FS.writeFile(mark, '1');
+    FS.syncfs(false, function() {});
+  }
+
+  function vfsRefresh() {
+    var list = document.getElementById('vfs-list');
+    list.innerHTML = '';
+    var names = [];
+    try {
+      names = Module.FS.readdir('/data').filter(function(n) {
+        return n !== '.' && n !== '..' && n[0] !== '.';
+      }).sort();
+    } catch (e) {}
+    if (!names.length) {
+      list.innerHTML = '<li><span>(空 — 先上传文件)</span></li>';
+      return;
+    }
+    names.forEach(function(name) {
+      var li = document.createElement('li');
+      var span = document.createElement('span');
+      span.textContent = name;
+      span.title = name;
+      var open = document.createElement('button');
+      open.textContent = '打开';
+      open.disabled = vfsRunning;
+      open.onclick = function() { vfsOpen(name); };
+      var del = document.createElement('button');
+      del.textContent = '✕';
+      del.className = 'del';
+      del.title = '删除';
+      del.disabled = vfsRunning;
+      del.onclick = function() {
+        Module.FS.unlink('/data/' + name);
+        Module.FS.syncfs(false, function() {});
+        vfsStatus('已删除: ' + name);
+        vfsRefresh();
+      };
+      li.appendChild(span);
+      li.appendChild(open);
+      li.appendChild(del);
+      list.appendChild(li);
+    });
+  }
+
+  function vfsOpen(name) {
+    if (vfsRunning) return;
+    vfsRunning = true;
+    vfsStatus('运行中: ' + name);
+    vfsRefresh();
+    document.getElementById('canvas').focus();
+    Module.callMain(['/data/' + name]);
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var input = document.getElementById('vfs-upload');
+    document.getElementById('vfs-add').onclick = function() { input.click(); };
+    input.onchange = function() {
+      var files = Array.from(input.files);
+      Promise.all(files.map(function(f) {
+        return f.arrayBuffer().then(function(buf) {
+          Module.FS.writeFile('/data/' + f.name, new Uint8Array(buf));
+        });
+      })).then(function() {
+        Module.FS.syncfs(false, function() {});
+        vfsStatus('已上传 ' + files.length + ' 个文件');
+        vfsRefresh();
+        input.value = '';
+      });
+    };
+  });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

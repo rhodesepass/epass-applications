@@ -36,7 +36,7 @@ target_compile_options(${APPLICATION_NAME} PRIVATE
 target_link_libraries(${APPLICATION_NAME} PRIVATE
     hal_display
     system_maintenance_core
-    epass_input
+    hal_input
     lvgl
     epass_fonts
     PNG::PNG

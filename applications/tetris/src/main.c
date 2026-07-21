@@ -89,70 +89,81 @@ static void draw_game(game_framebuffer_t *fb, const tetris_game_t *game)
     }
 }
 
-int main(void)
-{
-    game_platform_t platform = {0};
+typedef struct {
+    game_platform_t platform;
     tetris_game_t game;
     uint64_t previous_ms;
-    uint64_t key3_held_since = 0;
-    uint64_t next_soft_drop = 0;
+    uint64_t key3_held_since;
+    uint64_t next_soft_drop;
+} tetris_app_t;
+
+static bool tick(void *userdata)
+{
+    tetris_app_t *app = userdata;
+
+    if(!running) return false;
+    uint64_t now = game_monotonic_ms();
+    uint32_t elapsed = (uint32_t)(now - app->previous_ms);
+    app->previous_ms = now;
+    if(elapsed > 100) elapsed = 100;
+
+    game_input_update(&app->platform);
+    if(game_key_pressed(&app->platform, GAME_KEY_BACK))
+        return false;
+
+    if(app->game.game_over) {
+        if(game_key_pressed(&app->platform, GAME_KEY_OK))
+            tetris_init(&app->game, (uint32_t)(now ^ (uint64_t)getpid()));
+    } else {
+        if(game_key_pressed(&app->platform, GAME_KEY_UP) ||
+           game_key_repeated(&app->platform, GAME_KEY_UP))
+            tetris_move(&app->game, -1);
+        if(game_key_pressed(&app->platform, GAME_KEY_DOWN) ||
+           game_key_repeated(&app->platform, GAME_KEY_DOWN))
+            tetris_move(&app->game, 1);
+
+        if(game_key_pressed(&app->platform, GAME_KEY_OK)) {
+            tetris_rotate(&app->game);
+            app->key3_held_since = now;
+            app->next_soft_drop = now + 300;
+        }
+        if(game_key_down(&app->platform, GAME_KEY_OK) &&
+           app->key3_held_since != 0 && now >= app->next_soft_drop) {
+            tetris_soft_drop(&app->game);
+            app->next_soft_drop = now + 55;
+        }
+        if(!game_key_down(&app->platform, GAME_KEY_OK))
+            app->key3_held_since = 0;
+        tetris_tick(&app->game, elapsed);
+    }
+
+    game_framebuffer_t framebuffer;
+    if(!game_platform_acquire_frame(&app->platform, &framebuffer))
+        return false;
+    draw_game(&framebuffer, &app->game);
+    if(!game_platform_present(&app->platform))
+        return false;
+    game_platform_idle(&app->platform, 8);
+    return true;
+}
+
+int main(void)
+{
+    static tetris_app_t app;
 
     signal(SIGINT, stop_running);
     signal(SIGTERM, stop_running);
-    if(!game_platform_init(&platform)) {
+    if(!game_platform_init(&app.platform)) {
         fprintf(stderr, "tetris: platform initialization failed\n");
         return 1;
     }
 
-    game_input_set_repeat(&platform, 260, 75);
-    previous_ms = game_monotonic_ms();
-    tetris_init(&game, (uint32_t)(previous_ms ^ (uint64_t)getpid()));
+    game_input_set_repeat(&app.platform, 260, 75);
+    app.previous_ms = game_monotonic_ms();
+    tetris_init(&app.game, (uint32_t)(app.previous_ms ^ (uint64_t)getpid()));
 
-    while(running) {
-        uint64_t now = game_monotonic_ms();
-        uint32_t elapsed = (uint32_t)(now - previous_ms);
-        previous_ms = now;
-        if(elapsed > 100) elapsed = 100;
+    game_run(&app.platform, tick, &app);
 
-        game_input_update(&platform);
-        if(game_key_pressed(&platform, GAME_KEY_BACK))
-            break;
-
-        if(game.game_over) {
-            if(game_key_pressed(&platform, GAME_KEY_OK))
-                tetris_init(&game, (uint32_t)(now ^ (uint64_t)getpid()));
-        } else {
-            if(game_key_pressed(&platform, GAME_KEY_UP) ||
-               game_key_repeated(&platform, GAME_KEY_UP))
-                tetris_move(&game, -1);
-            if(game_key_pressed(&platform, GAME_KEY_DOWN) ||
-               game_key_repeated(&platform, GAME_KEY_DOWN))
-                tetris_move(&game, 1);
-
-            if(game_key_pressed(&platform, GAME_KEY_OK)) {
-                tetris_rotate(&game);
-                key3_held_since = now;
-                next_soft_drop = now + 300;
-            }
-            if(game_key_down(&platform, GAME_KEY_OK) &&
-               key3_held_since != 0 && now >= next_soft_drop) {
-                tetris_soft_drop(&game);
-                next_soft_drop = now + 55;
-            }
-            if(!game_key_down(&platform, GAME_KEY_OK))
-                key3_held_since = 0;
-            tetris_tick(&game, elapsed);
-        }
-
-        game_framebuffer_t framebuffer;
-        if(!game_platform_acquire_frame(&platform, &framebuffer))
-            break;
-        draw_game(&framebuffer, &game);
-        if(!game_platform_present(&platform))
-            break;
-        usleep(8000);
-    }
-
-    game_platform_destroy(&platform);
+    game_platform_destroy(&app.platform);
     return 0;
 }

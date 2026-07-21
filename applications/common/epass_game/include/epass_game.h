@@ -55,6 +55,15 @@ int game_platform_width(const game_platform_t *platform);
 int game_platform_height(const game_platform_t *platform);
 uint64_t game_monotonic_ms(void);
 
+/* 主循环归平台所有: epass 后端是普通 while, wasm 后端挂浏览器帧回调
+   (game_run 不返回, 之后的清理代码只在 epass 上执行)。tick 返回 false 退出。 */
+typedef bool (*game_tick_fn)(void *userdata);
+void game_run(game_platform_t *platform, game_tick_fn tick, void *userdata);
+
+/* tick 内让出 CPU 的节流提示: epass = usleep, wasm = 空操作(rAF 自带节拍,
+   sleep 在浏览器里只能忙等)。 */
+void game_platform_idle(game_platform_t *platform, uint32_t ms);
+
 /* Drain nonblocking evdev input and update edge/repeat state once per tick. */
 void game_input_update(game_platform_t *platform);
 void game_input_set_repeat(game_platform_t *platform,
