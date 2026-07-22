@@ -4,10 +4,8 @@
 
 #include "hal_run.h"
 #include <lvgl.h>
-#include <ctype.h>
 #include <signal.h>
 #include <stdio.h>
-#include <string.h>
 #include <unistd.h>
 
 static volatile sig_atomic_t stopping;
@@ -16,15 +14,6 @@ static void stop_signal(int signal_number)
 {
     (void)signal_number;
     stopping = 1;
-}
-
-static bool txt_path(const char *path)
-{
-    size_t length = strlen(path);
-    return length >= 4 && path[length - 4] == '.' &&
-        tolower((unsigned char)path[length - 3]) == 't' &&
-        tolower((unsigned char)path[length - 2]) == 'x' &&
-        tolower((unsigned char)path[length - 1]) == 't';
 }
 
 typedef struct {
@@ -51,14 +40,14 @@ int main(int argc, char **argv)
 {
     static ebook_app_t app;
     int result = 1;
-    if(argc != 2 || !txt_path(argv[1])) {
-        fprintf(stderr, "usage: %s /absolute/path/book.txt\n", argv[0]);
+    if(argc != 2) {
+        fprintf(stderr, "usage: %s /absolute/path/to/file\n", argv[0]);
         return 2;
     }
     signal(SIGINT, stop_signal);
     signal(SIGTERM, stop_signal);
     if(!ebook_load_document(&app.document, argv[1])) {
-        fprintf(stderr, "failed to load TXT: %s\n", argv[1]);
+        fprintf(stderr, "failed to load: %s\n", argv[1]);
         return 1;
     }
     ebook_state_load(&app.document, &app.state);

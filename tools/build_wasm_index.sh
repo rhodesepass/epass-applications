@@ -100,6 +100,16 @@ cat > "$OUT" <<'EOF'
   main { flex: 1; display: flex; }
   iframe { flex: 1; border: 0; display: none; }
   #hint { margin: auto; font-size: 13px; }
+  /* 窄容器(devbox 会话页把本页塞进预览列): 上 wasm 画面 / 下列表+文件系统 */
+  @media (max-width: 700px) {
+    body { flex-direction: column; }
+    main { order: 1; flex: 0 0 62%; min-height: 0; }
+    nav {
+      order: 2; flex: 1; width: auto; min-height: 0;
+      border-right: 0; border-top: 1px solid #3a6874; padding-top: 10px;
+    }
+    nav p.keys { display: none; }
+  }
 </style>
 </head>
 <body>

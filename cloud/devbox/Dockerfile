@@ -61,14 +61,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN chmod -R a+rX /opt/epass && chmod -R a+rwX /opt/epass/emcache && \
     useradd -m -u 1000 -o -s /bin/bash dev
 
+# claude 只跟企业转发说话: 掐掉更新检查/遥测/错误上报这些对
+# api.anthropic.com 的旁路访问(出网受限环境下它们只会报错刷屏)
+ENV DISABLE_AUTOUPDATER=1 \
+    DISABLE_ERROR_REPORTING=1 \
+    DISABLE_TELEMETRY=1 \
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+
+# ---- ttyd(web 模式的浏览器终端, claude 跑在这里; trixie 无此包,
+#      用官方 release 的静态 musl 二进制) ----
+ARG TTYD_VERSION=1.7.7
+RUN curl -fSL --retry 5 --retry-all-errors --retry-delay 3 \
+        -o /usr/local/bin/ttyd \
+        "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64" && \
+    chmod +x /usr/local/bin/ttyd
+
+# ---- code-server(web 模式的浏览器版 VS Code; standalone tarball 自带
+#      node, 不依赖 apt nodejs, 版本锁死可复现)。
+#      放在最后: 别打掉前面昂贵的 emcc 预热层缓存 ----
+ARG CODE_SERVER_VERSION=4.101.2
+RUN curl -fSL --retry 5 --retry-all-errors --retry-delay 3 -C - \
+        -o /tmp/code-server.tgz \
+        "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server-${CODE_SERVER_VERSION}-linux-amd64.tar.gz" && \
+    tar -xzf /tmp/code-server.tgz -C /opt && rm /tmp/code-server.tgz && \
+    ln -s "/opt/code-server-${CODE_SERVER_VERSION}-linux-amd64/bin/code-server" \
+        /usr/local/bin/code-server
+
 ENV EPASS_SDK=/opt/epass/sdk \
     EPASS_LVGL_DIR=/opt/epass/lvgl/lvgl \
     EPASS_FONTS_DIR=/opt/epass/epass-fonts/original
 
-COPY devbox/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY devbox/entrypoint.sh devbox/entrypoint-web.sh devbox/llm_forward.py \
+    /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/entrypoint-web.sh
 
 USER dev
 WORKDIR /workspace
-EXPOSE 8080
+EXPOSE 8080 8443 7681
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

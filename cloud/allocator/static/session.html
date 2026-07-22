@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>epass 云端会话</title>
+<style>
+  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif;
+               background: #14161a; color: #e6e6e6; }
+  body { display: flex; flex-direction: column; }
+  .bar { display: flex; align-items: center; gap: .8rem; padding: .4rem .8rem;
+         background: #1e2128; font-size: .85rem; flex: none; }
+  .bar .hint { color: #8a8f99; overflow: hidden; text-overflow: ellipsis;
+               white-space: nowrap; }
+  .bar button { border: 0; border-radius: 5px; padding: .25rem .7rem;
+                background: #2e3340; color: #dde; cursor: pointer; }
+  .bar button:hover { background: #3d4454; }
+  .panes { flex: 1; display: flex; min-height: 0; }
+  iframe { border: 0; height: 100%; min-width: 0; }
+  #term { flex: 0 0 38%; background: #000; }
+  #ide { flex: 0 0 34%; }
+  #preview { flex: 1 1 0; background: #07131a; }
+  .split { flex: none; width: 6px; cursor: col-resize; background: #1e2128; }
+  .split:hover, .split.drag { background: #3a7afe; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>epass 试用会话</b>
+  <button onclick="copyUrl(this)">复制会话链接</button>
+  <button onclick="refreshPreview()">刷新预览</button>
+  <span class="hint">60 分钟无活动会话销毁;安装包在预览页 packages/ 下载</span>
+</div>
+<div class="panes">
+  <iframe id="term" src="/s/{{TOKEN}}/term/"
+          allow="clipboard-read; clipboard-write"></iframe>
+  <div class="split" data-left="term"></div>
+  <iframe id="ide" src="/s/{{TOKEN}}/ide/?folder=/workspace"
+          allow="clipboard-read; clipboard-write"></iframe>
+  <div class="split" data-left="ide"></div>
+  <iframe id="preview" src="/s/{{TOKEN}}/preview/"></iframe>
+</div>
+<script>
+function copyUrl(btn) {
+  navigator.clipboard.writeText(location.origin + "/s/{{TOKEN}}/").then(() => {
+    btn.textContent = "已复制";
+    setTimeout(() => btn.textContent = "复制会话链接", 1500);
+  });
+}
+function refreshPreview() {
+  const f = document.getElementById("preview");
+  f.src = f.src;
+}
+// 拖分隔条改面板宽度; 拖动时冻结 iframe 的鼠标事件, 否则指针一进
+// iframe 就收不到 move
+document.querySelectorAll(".split").forEach(sp => {
+  sp.addEventListener("pointerdown", e => {
+    const left = document.getElementById(sp.dataset.left);
+    const startX = e.clientX;
+    const startW = left.getBoundingClientRect().width;
+    sp.setPointerCapture(e.pointerId);
+    sp.classList.add("drag");
+    document.querySelectorAll("iframe")
+        .forEach(f => f.style.pointerEvents = "none");
+    const move = ev => {
+      const w = Math.max(180, startW + ev.clientX - startX);
+      left.style.flex = "0 0 " + w + "px";
+    };
+    sp.addEventListener("pointermove", move);
+    sp.addEventListener("pointerup", () => {
+      sp.removeEventListener("pointermove", move);
+      sp.classList.remove("drag");
+      document.querySelectorAll("iframe")
+          .forEach(f => f.style.pointerEvents = "");
+    }, { once: true });
+  });
+});
+</script>
+</body>
+</html>

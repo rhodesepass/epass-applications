@@ -39,8 +39,8 @@ int main(int argc, char **argv)
 {
     static iv_app_t app;
     int result = 1;
-    if(argc != 2 || !iv_gallery_is_image(argv[1])) {
-        fprintf(stderr, "usage: %s /path/to/image.{jpg,jpeg,png,bmp,gif}\n", argv[0]);
+    if(argc != 2) {
+        fprintf(stderr, "usage: %s /path/to/image\n", argv[0]);
         return 2;
     }
     signal(SIGINT, stop_signal);

@@ -5,7 +5,6 @@
 #include <lvgl.h>
 #include <signal.h>
 #include <stdio.h>
-#include <string.h>
 #include <unistd.h>
 
 static volatile sig_atomic_t stopping;
@@ -16,12 +15,6 @@ static void stop_signal(int signal_number)
     stopping = 1;
 }
 
-static bool is_mp4(const char *path)
-{
-    const char *dot = strrchr(path, '.');
-    return dot && !strcasecmp(dot, ".mp4");
-}
-
 int main(int argc, char **argv)
 {
     vp_platform_t platform;
@@ -29,8 +22,8 @@ int main(int argc, char **argv)
     vp_ui_t *ui = NULL;
     int result = 1;
 
-    if(argc != 2 || !is_mp4(argv[1])) {
-        fprintf(stderr, "usage: %s /path/to/video.mp4\n", argv[0]);
+    if(argc != 2) {
+        fprintf(stderr, "usage: %s /path/to/video\n", argv[0]);
         return 2;
     }
     signal(SIGINT, stop_signal);

@@ -84,6 +84,27 @@ bool iv_gallery_load(iv_gallery_t *gallery, const char *start_path)
     }
     closedir(handle);
     handle = NULL;
+    /* 启动路径始终入册(扩展名由系统关联,应用不拒收) */
+    {
+        bool found = false;
+        for(size_t i = 0; i < gallery->count; i++) {
+            if(strcmp(gallery->paths[i], resolved) == 0) {
+                found = true;
+                break;
+            }
+        }
+        if(!found) {
+            if(gallery->count == capacity) {
+                capacity = capacity ? capacity * 2 : 32;
+                char **grown = realloc(gallery->paths, capacity * sizeof(char *));
+                if(!grown) goto fail;
+                gallery->paths = grown;
+            }
+            gallery->paths[gallery->count] = strdup(resolved);
+            if(!gallery->paths[gallery->count]) goto fail;
+            gallery->count++;
+        }
+    }
     if(gallery->count == 0) goto fail;
     qsort(gallery->paths, gallery->count, sizeof(char *), compare_paths);
     gallery->current = 0;

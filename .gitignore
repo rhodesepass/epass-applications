@@ -6,3 +6,4 @@ compile_commands.json
 .cache/
 cloud/data/
 
+__pycache__/
