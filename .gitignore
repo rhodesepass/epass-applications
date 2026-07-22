@@ -1,6 +1,8 @@
 /build/
 /build_*/
+/build-*/
 /dist/
 compile_commands.json
 .cache/
 cloud/data/
+
