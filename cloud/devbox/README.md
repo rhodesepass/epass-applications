@@ -18,9 +18,11 @@ docker build -t epass-devbox -f cloud/devbox/Dockerfile cloud/
 ## 日常使用
 
 ```sh
-export ANTHROPIC_BASE_URL=...   # 企业转发
+export ANTHROPIC_BASE_URL=...          # 企业转发
 export ANTHROPIC_API_KEY=...
-cloud/devbox/run.sh [会话名]     # 缺省时间戳; 同名则复用 workspace
+export ANTHROPIC_MODEL=...             # 默认模型名(转发侧要求显式指定时)
+export ANTHROPIC_SMALL_FAST_MODEL=...  # 可选: 后台小任务模型
+cloud/devbox/run.sh [会话名]            # 缺省时间戳; 同名则复用 workspace
 ```
 
 进去就是 Claude Code,workspace 是本仓库的私有克隆(`cloud/data/workspaces/<会话名>/repo`,

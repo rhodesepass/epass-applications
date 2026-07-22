@@ -50,6 +50,12 @@ RUN cd /tmp && export EM_FROZEN_CACHE=0 && \
         -sUSE_FREETYPE=1 -sUSE_LIBPNG=1 -o b.js && \
     rm -f prewarm.c a.* b.*
 
+# host 侧构建+ctest 用的工具链(与开发机同构): agent 的"改完先跑单测"
+# 循环靠它, 缺了会退化成瞎改
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc libc6-dev libdrm-dev libpng-dev libfreetype-dev pkgconf \
+    && rm -rf /var/lib/apt/lists/*
+
 # 缓存要保持可写: emcc 运行期会写 symbol_lists 及其锁文件(容器一次性,
 # 弄脏了无所谓); 其余 /opt/epass 只读
 RUN chmod -R a+rX /opt/epass && chmod -R a+rwX /opt/epass/emcache && \

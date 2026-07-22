@@ -21,5 +21,7 @@ exec docker run -it --rm \
     -p 8080:8080 \
     -e ANTHROPIC_API_KEY \
     -e ANTHROPIC_BASE_URL \
+    -e ANTHROPIC_MODEL \
+    -e ANTHROPIC_SMALL_FAST_MODEL \
     -v "$(pwd)/$WS/repo:/workspace" \
     epass-devbox
