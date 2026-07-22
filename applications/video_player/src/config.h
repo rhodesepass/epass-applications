@@ -31,6 +31,11 @@
 // 该转的角度。真机验证方向反了就改成 270。
 #define VP_ROT_CW_ANGLE 90
 
+// 倒装屏(boe-flip-180.md)：DEBE 只翻 UI 层内容和层坐标，frontend 灌的
+// 视频层内容要 app 自己过 SDROT 设 VFLIP 预翻。有此 DT key 即倒装机型。
+#define VP_SCANOUT_YFLIP_DT_PATH \
+    "/proc/device-tree/soc/display-backend@1e60000/srgn,scanout-yflip"
+
 // ========== 播放条 UI ==========
 #define VP_BAR_WIDTH_REF 360   // 360x640 基准屏下的条尺寸；其他屏按宽度等比放大
 #define VP_BAR_HEIGHT_REF 132

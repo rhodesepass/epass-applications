@@ -105,7 +105,7 @@ static void rot_teardown_cap(struct rot_ctx *r)
 	r->cap_count = 0;
 }
 
-int rot_session_start(struct rot_ctx *r, int angle,
+int rot_session_start(struct rot_ctx *r, int angle, bool vflip,
 		      unsigned int width, unsigned int height,
 		      unsigned int cap_count)
 {
@@ -117,8 +117,15 @@ int rot_session_start(struct rot_ctx *r, int angle,
 
 	if (r->fd < 0 || r->streaming || cap_count > ROT_MAX_CAP_BUFS)
 		return -1;
-	if (angle != 90 && angle != 180 && angle != 270)
+	if (angle != 0 && angle != 90 && angle != 180 && angle != 270)
 		return -1;
+	if (angle == 0 && !vflip)
+		return -1;
+	if (vflip && (angle == 90 || angle == 270)) {
+		/* 转置 op6/7 硬件未验证，驱动 S_CTRL 会拒；调用方拆两趟 */
+		log_error("rot vflip+%d unsupported", angle);
+		return -1;
+	}
 
 	/* OUTPUT 传视频真实宽高：传 32 对齐值会连 padding 宏块一起转，画面偏移 */
 	if (rot_set_format(r->fd, V4L2_BUF_TYPE_VIDEO_OUTPUT,
@@ -146,14 +153,32 @@ int rot_session_start(struct rot_ctx *r, int angle,
 	h16 = ROT_ALIGN(cap_h, 16);
 	r->cap_uv_offset = r->cap_bytesperline * ROT_ALIGN(h16, 32);
 
+	/* ctrl 状态跨会话残留在 fd 上，组合检查按当前值算：先清镜像位，
+	 * 否则上一会话的 vflip 会把本次 rotate=90 的 S_CTRL 顶成 -EINVAL */
 	memset(&ctrl, 0, sizeof(ctrl));
+	ctrl.id = V4L2_CID_HFLIP;
+	ctrl.value = 0;
+	ioctl(r->fd, VIDIOC_S_CTRL, &ctrl);
+	ctrl.id = V4L2_CID_VFLIP;
+	ctrl.value = 0;
+	ioctl(r->fd, VIDIOC_S_CTRL, &ctrl);
+
 	ctrl.id = V4L2_CID_ROTATE;
 	ctrl.value = angle;
 	if (ioctl(r->fd, VIDIOC_S_CTRL, &ctrl) < 0) {
 		log_error("rot S_CTRL rotate=%d err: %s", angle, strerror(errno));
 		return -1;
 	}
+	if (vflip) {
+		ctrl.id = V4L2_CID_VFLIP;
+		ctrl.value = 1;
+		if (ioctl(r->fd, VIDIOC_S_CTRL, &ctrl) < 0) {
+			log_error("rot S_CTRL vflip err: %s", strerror(errno));
+			return -1;
+		}
+	}
 	r->angle = angle;
+	r->vflip = vflip;
 
 	if (rot_reqbufs(r->fd, V4L2_BUF_TYPE_VIDEO_OUTPUT,
 			V4L2_MEMORY_DMABUF, 1) < 0)
@@ -212,8 +237,8 @@ int rot_session_start(struct rot_ctx *r, int angle,
 	}
 	r->streaming = true;
 
-	log_info("rot session: %ux%u -> %ux%u angle=%d bufs=%u stride=%u size=%u",
-		 width, height, cap_w, cap_h, angle, cap_count,
+	log_info("rot session: %ux%u -> %ux%u angle=%d vflip=%d bufs=%u stride=%u size=%u",
+		 width, height, cap_w, cap_h, angle, vflip, cap_count,
 		 r->cap_bytesperline, r->cap_sizeimage);
 	return 0;
 

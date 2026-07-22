@@ -63,6 +63,13 @@ typedef struct {
     bool               rot_fd_open;
     bool               rot_active;
     bool               rot_resetup;   /* rot_run 报会话故障，循环顶部重建 */
+
+    /* 倒装屏(scanout-yflip)：视频层内容恒过 SDROT 补 VFLIP。90/270 时
+     * vflip+rotate 是被禁的转置 op，拆两趟：rot_pre 旋转 → rot 做 vflip */
+    bool               scanout_yflip;
+    struct rot_ctx     rot_pre;
+    bool               rot_pre_fd_open;
+    bool               rot_pre_active;
     uint32_t           rot_fb_ids[ROT_MAX_CAP_BUFS];
     uint32_t           rot_gems[ROT_MAX_CAP_BUFS];
     int                rot_free[ROT_MAX_CAP_BUFS];
@@ -323,6 +330,12 @@ static void mp_apply_geometry(mediaplayer_t *mp)
 
 /* ---------- 旋转会话 ---------- */
 
+/* 倒装屏上 0 度也要过 SDROT 补 vflip，直通路径只剩正装屏的 0 度 */
+static inline bool mp_rot_needed(const mp_dev_priv_t *p, int angle)
+{
+    return angle != 0 || p->scanout_yflip;
+}
+
 static void mp_rot_teardown(mediaplayer_t *mp)
 {
     mp_dev_priv_t *p = (mp_dev_priv_t *)mp->priv;
@@ -339,6 +352,10 @@ static void mp_rot_teardown(mediaplayer_t *mp)
         rot_session_stop(&p->rot);
         p->rot_active = false;
     }
+    if (p->rot_pre_active) {
+        rot_session_stop(&p->rot_pre);
+        p->rot_pre_active = false;
+    }
     p->rot_free_n = 0;
     memset(p->hold_rot, 0, sizeof(p->hold_rot));
 }
@@ -347,16 +364,39 @@ static int mp_rot_setup(mediaplayer_t *mp, int angle)
 {
     mp_dev_priv_t *p = (mp_dev_priv_t *)mp->priv;
     unsigned int i;
+    unsigned int w = mp->display_width, h = mp->display_height;
+    bool vflip = p->scanout_yflip;
+    int final_angle = angle;
+
+    /* vflip+90/270 被驱动拒(转置 op 未验证)：前级先旋转，末级只 vflip。
+     * 前级 1 个 buffer 够用——rot_run 同步，转完立刻被末级吃掉 */
+    if (vflip && (angle == 90 || angle == 270)) {
+        if (!p->rot_pre_fd_open) {
+            if (rot_open(&p->rot_pre) < 0)
+                return -1;
+            p->rot_pre_fd_open = true;
+        }
+        if (rot_session_start(&p->rot_pre, angle, false, w, h, 1) < 0)
+            return -1;
+        p->rot_pre_active = true;
+        w = p->rot_pre.cap_width;
+        h = p->rot_pre.cap_height;
+        final_angle = 0;
+    }
 
     if (!p->rot_fd_open) {
-        if (rot_open(&p->rot) < 0)
+        if (rot_open(&p->rot) < 0) {
+            mp_rot_teardown(mp);
             return -1;
+        }
         p->rot_fd_open = true;
     }
 
-    if (rot_session_start(&p->rot, angle, mp->display_width,
-                          mp->display_height, VP_ROT_BUFS) < 0)
+    if (rot_session_start(&p->rot, final_angle, vflip, w, h,
+                          VP_ROT_BUFS) < 0) {
+        mp_rot_teardown(mp);
         return -1;
+    }
     p->rot_active = true;
 
     for (i = 0; i < p->rot.cap_count; i++) {
@@ -400,7 +440,16 @@ static int mp_rot_frame(mediaplayer_t *mp, int slot, int *rot_idx)
         usleep(5 * 1000);
     }
 
-    rc = rot_run(&p->rot, p->vdec.cap[slot].dmabuf_fd, *rot_idx);
+    int src_fd = p->vdec.cap[slot].dmabuf_fd;
+
+    rc = 0;
+    if (p->rot_pre_active) {
+        rc = rot_run(&p->rot_pre, src_fd, 0);
+        if (rc == 0)
+            src_fd = p->rot_pre.cap[0].dmabuf_fd;
+    }
+    if (rc == 0)
+        rc = rot_run(&p->rot, src_fd, *rot_idx);
     if (rc != 0) {
         p->rot_free[p->rot_free_n++] = *rot_idx;
         if (rc < 0) {
@@ -550,8 +599,9 @@ static void mp_do_rot_switch(mediaplayer_t *mp, int want)
     mp->session_gen++;
 
     mp_rot_teardown(mp);
-    if (want != 0 && mp_rot_setup(mp, want) < 0) {
-        log_warn("rot setup for %d failed, falling back to 0", want);
+    if (mp_rot_needed(p, want) && mp_rot_setup(mp, want) < 0) {
+        log_warn("rot setup for %d failed, falling back to direct%s", want,
+                 p->scanout_yflip ? " (yflip uncompensated)" : "");
         want = 0;
         atomic_store(&mp->rot_request, 0);
     }
@@ -952,6 +1002,13 @@ int mediaplayer_init(mediaplayer_t *mp, hal_display_t *hal_display,
         log_error("mediaplayer priv alloc failed");
         return -1;
     }
+    {
+        mp_dev_priv_t *p = (mp_dev_priv_t *)mp->priv;
+
+        p->scanout_yflip = access(VP_SCANOUT_YFLIP_DT_PATH, F_OK) == 0;
+        if (p->scanout_yflip)
+            log_info("scanout-yflip panel: video via SDROT vflip");
+    }
     pthread_rwlock_init(&mp->thread.rwlock, NULL);
     atomic_store(&mp->running, 0);
     mp->hal_display = hal_display;
@@ -974,6 +1031,10 @@ int mediaplayer_destroy(mediaplayer_t *mp)
     if (p->rot_fd_open) {
         rot_close(&p->rot);
         p->rot_fd_open = false;
+    }
+    if (p->rot_pre_fd_open) {
+        rot_close(&p->rot_pre);
+        p->rot_pre_fd_open = false;
     }
     pthread_rwlock_destroy(&mp->thread.rwlock);
     free(mp->priv);
@@ -1113,8 +1174,9 @@ static int mp_prepare_and_spawn(mediaplayer_t *mp)
 
     /* 横屏素材自动立起来；方向宏顺逆待真机验证(config.h) */
     angle = mp->display_width > mp->display_height ? VP_ROT_CW_ANGLE : 0;
-    if (angle != 0 && mp_rot_setup(mp, angle) < 0) {
-        log_warn("cedrus-rotate unavailable, playing unrotated");
+    if (mp_rot_needed(p, angle) && mp_rot_setup(mp, angle) < 0) {
+        log_warn("cedrus-rotate unavailable, playing direct%s",
+                 p->scanout_yflip ? " (yflip uncompensated)" : "");
         angle = 0;
     }
     p->cur_angle = angle;

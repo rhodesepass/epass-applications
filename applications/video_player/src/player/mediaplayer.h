@@ -3,7 +3,8 @@
  * dmabuf FB → hal_display atomic 翻页），为播放器加了：
  *  - 暂停（pacer 层，唯一定速点也是唯一暂停点，pacer 恒开）
  *  - 关键帧级 seek（异步请求，解码线程在循环顶部执行）
- *  - cedrus-rotate 硬件旋转（0/90/180/270，运行时可切）
+ *  - cedrus-rotate 硬件旋转（0/90/180/270，运行时可切）；倒装屏
+ *    (srgn,scanout-yflip)自动给视频层补 SDROT VFLIP（boe-flip-180.md）
  *  - 播放进度/时长查询（UI 拉取）
  * EOS 行为与上游一致：回绕循环播放。
  */

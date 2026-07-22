@@ -29,6 +29,7 @@ struct rot_ctx {
 	bool streaming;
 
 	int angle;		/* 0/90/180/270 */
+	bool vflip;
 	unsigned int src_width;	/* OUTPUT 端 = 视频可见宽高（非 32 对齐值） */
 	unsigned int src_height;
 	unsigned int src_sizeimage;
@@ -51,8 +52,11 @@ void rot_close(struct rot_ctx *r);
 /*
  * 建会话直到 STREAMON：格式（90/270 时 CAPTURE 宽高对调）、角度、
  * OUTPUT 端 1 个 DMABUF 槽、CAPTURE 端 cap_count 个 MMAP+EXPBUF buffer。
+ *
+ * vflip 只允许配 0/180（180 由驱动化简成 hflip）；配 90/270 是转置
+ * op6/7，硬件未验证、驱动拒绝——需要的话拆两个会话串联。
  */
-int rot_session_start(struct rot_ctx *r, int angle,
+int rot_session_start(struct rot_ctx *r, int angle, bool vflip,
 		      unsigned int width, unsigned int height,
 		      unsigned int cap_count);
 
